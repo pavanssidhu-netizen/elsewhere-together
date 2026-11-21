@@ -43,3 +43,9 @@ See `docs/AUDIO.md`. Summary:
 - Desktop world canvas is small within its panel; visual effects at high drift/strain were checked via CSS classes and one screenshot, not tuned by eye.
 - Credit estimates and the default voice id in the script are unverified assumptions.
 - `e2e/run.mjs` needs `CHROME_PATH` set to a local Chromium.
+
+## Credits and attributions (V2)
+
+- **Art:** "Scribble Dungeons" by Kenney (kenney.nl), licensed CC0. Files and licence are in `public/assets/scribble/`.
+- **Voices and SFX:** generated with ElevenLabs (see Audio above). Music is synthesised in the browser.
+- **Science referenced (the game is fiction, not physics):** Everett (1957), relative-state formulation and the many-worlds interpretation; DeWitt (1970s), popularisation of many-worlds; Zurek (2003), decoherence, Reviews of Modern Physics; Bronstein (2015), *Mutualism*, Oxford University Press. The in-game About screen repeats these.
