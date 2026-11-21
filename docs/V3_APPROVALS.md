@@ -9,3 +9,9 @@ Only the user can record an approval. The agent records what it presented.
 **Missing roles:** lantern, lighthouse/beacon, humanoid symbiotes (the packs have only round blob characters).
 
 **Status:** awaiting user reply (`APPROVE A` or corrections).
+
+**User reply (verbatim intent):** "yes ... I'm fine with you choosing the objects from that sheet ... those round characters are what I want for the characters, call one Jensen and the other one Sam."
+**Recorded as:** APPROVED A by user. Characters = Scribble Platformer `character_roundYellow` (Jensen, amber) and `character_roundGreen` tinted cyan (Sam). Lead chooses objects: clearing fire = `campfire`; beacon = `stairs_down` + `wall_curve` ring + `campfire`; resonant stones / thread stone = `tiles_decorative`; garden = walls + `plants` + `door_open`; sluice = `door_closed`/`door_open` + `wood`; bridge = `bridge` / `bridge_end` + `planks`; trees `tree`; forest border ink-forest crops; water `water`/`puddle`; path `path*`; floor `grass`/`tile`. Side-on platformer tiles excluded.
+
+## Gate B: one playable clearing
+**Status:** in progress.
