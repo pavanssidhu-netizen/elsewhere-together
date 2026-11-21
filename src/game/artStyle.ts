@@ -15,11 +15,12 @@ const ORDER: ArtStyle[] = ART_STYLES.map(s => s.id);
 const valid = (s: string | null): s is ArtStyle => !!s && (ORDER as string[]).includes(s);
 
 function resolve(): ArtStyle {
+  // V4: the approved SCRIBBLE art always loads by default. Other styles only via an explicit ?style= URL
+  // (not remembered), so an old comparison choice can never make the game look reverted.
   try {
+    localStorage.removeItem(KEY); localStorage.removeItem('elsewhere-together-style');
     const q = new URLSearchParams(location.search).get('style');
-    if (valid(q)) { try { localStorage.setItem(KEY, q); } catch { /* ignore */ } return q; }
-    const s = localStorage.getItem(KEY);
-    if (valid(s)) return s;
+    if (valid(q)) return q;
   } catch { /* ignore */ }
   return 'scribble';
 }
@@ -41,7 +42,6 @@ export const INK_SCALE = 4;
 /** Cycle SCRIBBLE -> PIXEL -> INK -> INK-LIGHT and reload (keeps other URL params such as ?debug=1). */
 export function toggleArtStyle(): void {
   const next = ORDER[(ORDER.indexOf(ART_STYLE) + 1) % ORDER.length];
-  try { localStorage.setItem(KEY, next); } catch { /* ignore */ }
   const u = new URL(location.href); u.searchParams.set('style', next);
   location.href = u.toString();
 }
