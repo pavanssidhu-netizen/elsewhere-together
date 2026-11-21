@@ -718,5 +718,29 @@
   "license": "CC0",
   "role": null,
   "transform": "none"
+ },
+ {
+  "key": "scribble-dungeons/trapdoor_round",
+  "sourcePack": "Kenney \u2014 Scribble Dungeons 1.0",
+  "sourceUrl": "https://kenney.nl/assets/scribble-dungeons",
+  "sourcePath": "PNG/Default (64px)/trapdoor_round.png",
+  "outputPath": "assets/imported/scribble-dungeons/trapdoor_round.png",
+  "width": 64,
+  "height": 64,
+  "license": "CC0",
+  "role": "inscription stone (frequency)",
+  "transform": "none"
+ },
+ {
+  "key": "scribble-platformer/tile_cog",
+  "sourcePack": "Kenney \u2014 Scribble Platformer",
+  "sourceUrl": "https://kenney.nl/assets/scribble-platformer",
+  "sourcePath": "PNG/Default/tile_cog.png",
+  "outputPath": "assets/imported/scribble-platformer/tile_cog.png",
+  "width": 64,
+  "height": 64,
+  "license": "CC0",
+  "role": "waterwheel (rotates when water flows)",
+  "transform": "rotation animation"
  }
 ]
