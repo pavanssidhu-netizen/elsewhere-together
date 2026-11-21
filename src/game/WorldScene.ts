@@ -1,11 +1,30 @@
+/**
+ * WorldScene (V2). Grid-stepped world renderer for all four styles (SCRIBBLE default, PIXEL, INK, INK-LIGHT).
+ * Collision is ALWAYS topology.getWalkability(state) (bridge/ford/flood depend on the current node), never static.
+ *
+ * Public API for the Shell (existing names are unchanged):
+ *   refresh(instant?)                 redraw after any state change (re-reads realm / identity / flags)
+ *   syncToState()                     snap the figure to state.v2.gridX/gridY (call after RESTART / restore / demo)
+ *   setIdentity('amber'|'cyan')       colour of the player figure (state.v2.playerIdentity wins once set)
+ *   showPartnerNear(anchorId)         labelled 'VARIANT / ECHO' apparition beside an anchor (on ANCHOR_ALIGNED)
+ *   showPartnerTrace(objectId?, ms?)  NEW: same apparition beside any object (on PARTNER_TRACE; no id = near the player)
+ *   act(verb)                         NEW: 'SELF'|'ECHO'|'LET_GO'|'USE' on the focused object (mobile verb buttons); false if none
+ *   focused()                         NEW: id of the focused object or null
+ *   playEnding() / resetEnding() / pos() / teleport(x,y) unchanged (pos/teleport are logical px; teleport snaps to a tile).
+ * Hooks: getState, getDir, canMove, reduce, onFocus(id|null), onMoveEnd(), and optional dispatch(cmd): the scene sends
+ * { type:'MOVE', tx, ty } for every tile it enters (one adjacent step; the sim validates and may reject). Verb keys E/Q/F
+ * stay in main.ts; the in-world prompt bubble is drawn here. Style list for the toggle: ART_STYLES in artStyle.ts.
+ */
 import Phaser from 'phaser';
-import type { SimulationState, Stats } from '../sim/types';
+import type { SimulationState, Stats, Command, Choice, Identity } from '../sim/types';
+import { canWalk, getNearbyInteractables, TILE as TT } from '../world/topology';
+import { preloadScribble, prepareScribbleTextures, drawScribbleWorld, drawScribbleAmbient, ScribbleFx, ctxOf, identityColour, otherColour, SK, type Apparition } from './scribble';
 import {
-  TILE, MAP_W, MAP_H, MAP_ROWS, OBJECT_POSITIONS, PALETTE as P, INTERACT_RADIUS, MOVE_SPEED,
+  TILE, MAP_W, MAP_H, MAP_ROWS, OBJECT_POSITIONS, PALETTE as P,
   isBlockedPx, PLAYER_START, VIEW_W, VIEW_H,
 } from './layout';
 import { registerTextures, TEX, TILE as T, FX, animKey, SPRITE_SCALE as SC, GROUND_VARIANTS, type Dir } from './sprites';
-import { ART_INK, ART_LIGHT, INK_SCALE } from './artStyle';
+import { ART_INK, ART_LIGHT, ART_SCRIBBLE, INK_SCALE } from './artStyle';
 
 const DEEP_INK = 0x0b0f1c;
 /** Outline colour of overlay marks: deep ink on pale paper, pale mist on the dark ground. */
@@ -43,6 +62,7 @@ export interface SceneHooks {
   reduce(): boolean;
   onFocus(id: string | null): void;
   onMoveEnd(x: number, y: number): void;
+  dispatch?(c: Command): unknown;
 }
 
 const hash = (x: number, y: number) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
@@ -76,12 +96,25 @@ export class WorldScene extends Phaser.Scene {
   private rngState = 12345;
   private tileX = 0;
   private tileY = 0;
+  private tile = { tx: 7, ty: 5 };
+  private stepFrom = { x: PLAYER_START.x, y: PLAYER_START.y };
+  private stepTo = { x: PLAYER_START.x, y: PLAYER_START.y };
+  private stepT = 1;
+  private identity: Identity = 'amber';
+  private fx!: ScribbleFx;
+  private apparitions: Apparition[] = [];
+  private lastCtx: ReturnType<typeof ctxOf> = null;
+  private drawnLamp = false;
+  private drawnLh = false;
 
   constructor(hooks: SceneHooks) { super('world'); this.hooks = hooks; }
 
+  preload(): void { if (ART_SCRIBBLE) preloadScribble(this); }
+
   create(): void {
     registerTextures(this);
-    this.cameras.main.setBackgroundColor(P.midnight);
+    if (ART_SCRIBBLE) { prepareScribbleTextures(this); this.fx = new ScribbleFx(this); }
+    this.cameras.main.setBackgroundColor(ART_SCRIBBLE ? SK.paper : P.midnight);
     if (ART_INK) { // canvas is INK_SCALE x the logical grid; zoom the camera so world coordinates stay 320x180
       this.cameras.main.setZoom(INK_SCALE);
       this.cameras.main.centerOn(VIEW_W / 2, VIEW_H / 2);
@@ -95,8 +128,8 @@ export class WorldScene extends Phaser.Scene {
     this.playerSpr = this.add.sprite(this.px, this.py, TEX.chars).setOrigin(0.5, 1).setDepth(5).setScale(SC);
     for (let i = 0; i < 80; i++) this.rain.push({ x: this.rnd() * VIEW_W, y: this.rnd() * VIEW_H, v: 90 + this.rnd() * 70, l: 3 + this.rnd() * 3 });
     this.layers[1].setAlpha(0);
-    const s = this.hooks.getState();
-    if (s.player.x > 0 && s.player.y > 0) { this.px = s.player.x; this.py = s.player.y; }
+    if (ART_SCRIBBLE) for (const o of [this.playerSpr, this.partnerSpr, this.mergeSpr, this.glowSpr]) o.setVisible(false);
+    this.syncToState(true);
     this.refresh(true);
   }
 
@@ -109,7 +142,13 @@ export class WorldScene extends Phaser.Scene {
     const w = s.nodes[s.player.nodeId]?.world;
     if (!w) return;
     const anch = s.anchors.map(a => `${a.playerReady ? 1 : 0}${a.partnerReady ? 1 : 0}${a.aligned ? 1 : 0}`).join('');
-    const key = `${s.player.nodeId}|${w.light}${w.water}${w.structure}${w.signal}${w.growth}|${anch}`;
+    const nd = s.nodes[s.player.nodeId];
+    const key = `${s.player.nodeId}|${w.light}${w.water}${w.structure}${w.signal}${w.growth}|${anch}|${(nd.flags ?? []).join(',')}|${s.v2?.realm ?? ''}|${(s.v2?.examined ?? []).includes('stones') ? 1 : 0}|${w.instability > 40 ? 1 : 0}`;
+    if (ART_SCRIBBLE) {
+      this.lastCtx = ctxOf(s, s.player.nodeId);
+      this.drawnLamp = w.light >= 2; this.drawnLh = !!s.anchors.find(a => a.id === 'LIGHTHOUSE')?.aligned || w.light >= 3;
+      this.cameras.main.setBackgroundColor(s.v2?.realm === 'ALIEN' ? SK.alienPaper : SK.paper);
+    }
     if (key !== this.worldKey) {
       const first = this.worldKey === '';
       this.worldKey = key;
@@ -133,19 +172,44 @@ export class WorldScene extends Phaser.Scene {
   }
 
   showPartnerNear(anchorId: string | null, ms = 3200): void {
-    const p = OBJECT_POSITIONS[anchorId ? `anchor_${anchorId}` : 'anchor_LANTERN'] ?? { x: this.px, y: this.py };
-    this.partnerGhostAt = { x: p.x - 16, y: p.y + 6 };
-    this.partnerGhostUntil = this.time.now + ms;
+    const id = anchorId ? `anchor_${anchorId}` : 'anchor_LANTERN';
+    this.showPartnerTrace(id, ms);
+  }
+
+  showPartnerTrace(objectId?: string, ms = 3500): void {
+    const p = (objectId && OBJECT_POSITIONS[objectId]) || { x: this.px + 14, y: this.py - 2 };
+    const off = objectId ? -13 : 0;
+    this.apparitions = [{ x: p.x + off, y: p.y + 6, until: this.time.now + ms, label: 'VARIANT / ECHO' }];
+    this.partnerGhostAt = { x: p.x + off, y: p.y + 6 }; this.partnerGhostUntil = this.time.now + ms;
+  }
+
+  setIdentity(id: Identity): void { this.identity = id; }
+  focused(): string | null { return this.focusId; }
+  act(verb: Choice | 'USE'): boolean {
+    if (!this.focusId || !this.hooks.dispatch) return false;
+    this.hooks.dispatch(verb === 'USE' ? { type: 'INTERACT', objectId: this.focusId } : { type: 'INTERACT', objectId: this.focusId, choice: verb });
+    return true;
+  }
+
+  syncToState(instant = false): void {
+    const v = this.hooks.getState().v2;
+    const tx = v && Number.isFinite(v.gridX) ? v.gridX : Math.floor(PLAYER_START.x / TT), ty = v && Number.isFinite(v.gridY) ? v.gridY : Math.floor(PLAYER_START.y / TT);
+    if (instant || this.stepT >= 1) this.setTile(tx, ty);
+  }
+  private setTile(tx: number, ty: number): void {
+    this.tile = { tx, ty }; this.px = tx * TT + 8; this.py = ty * TT + 8; this.stepT = 1;
+    this.stepFrom = { x: this.px, y: this.py }; this.stepTo = { x: this.px, y: this.py };
   }
 
   playEnding(): void { this.endingStart = this.time.now; }
-  resetEnding(): void { this.endingStart = -1; }
+  resetEnding(): void { this.endingStart = -1; this.syncToState(true); }
   pos(): { x: number; y: number } { return { x: Math.round(this.px), y: Math.round(this.py) }; }
-  teleport(x: number, y: number): void { this.px = x; this.py = y; }
+  teleport(x: number, y: number): void { this.setTile(Math.floor(x / TT), Math.floor(y / TT)); }
 
   // ---------- static world drawing (tile images from sprites.ts) ----------
   private drawWorld(c: Phaser.GameObjects.Container, w: Stats, s: Readonly<SimulationState>, ghost = false): void {
     c.removeAll(true);
+    if (ART_SCRIBBLE) { const cx = ctxOf(s, s.player.nodeId, ghost); if (cx) { cx.w = w; drawScribbleWorld(this, c, cx); } return; }
     const img = (x: number, y: number, frame: string, tint?: number): Phaser.GameObjects.Image => {
       const i = this.add.image(x, y, TEX.tiles, frame).setOrigin(0, 0).setScale(SC);
       if (tint !== undefined) i.setTint(tint);
@@ -157,7 +221,7 @@ export class WorldScene extends Phaser.Scene {
       if (ART_INK && a >= 0.85 && ww * hh <= 100 && (col !== P.midnight || !ART_LIGHT)) { g.lineStyle(ART_LIGHT ? 0.5 : 0.7, INK_LINE, 0.9); g.strokeRect(x, y, ww, hh); } // small marks get an ink outline
     };
     const gv = (n: string) => { const v = ART_INK ? (hash(this.tileX, this.tileY) >>> 5) % GROUND_VARIANTS : 0; return v ? `${n}#${v}` : n; }; // INK: break up tiling
-    const alive = w.growth >= 2, intact = w.structure >= 2;
+    const alive = w.growth >= 2, intact = !(s.nodes[s.player.nodeId]?.flags ?? []).includes('BRIDGE_CLOSED');
     const lampLit = w.light >= 2;
     const lhA = s.anchors.find(a => a.id === 'LIGHTHOUSE')?.aligned;
     const lhLit = !!lhA || w.light >= 3;
@@ -165,7 +229,7 @@ export class WorldScene extends Phaser.Scene {
       const ch = MAP_ROWS[ty][tx]; const x = tx * TILE, y = ty * TILE; const h = hash(tx, ty); this.tileX = tx; this.tileY = ty;
       const base = gv(h % 3 === 0 || w.light < 1 ? T.ground_dark : T.ground);
       switch (ch) {
-        case '~': img(x, y, T.water); break;
+        case '~': case 'f': img(x, y, T.water); break;
         case '#': img(x, y, ty === 0 || ty === MAP_H - 1 ? T.wall : gv(T.ground_dark)); if (!(ty === 0 || ty === MAP_H - 1)) img(x, y, T.tree); break;
         case '=': img(x, y, T.road); break;
         case 'S': img(x, y, gv(T.ground), 0xd8c8a0); break;
@@ -219,33 +283,53 @@ export class WorldScene extends Phaser.Scene {
     const dt = Math.min(delta, 50) / 1000;
     const s = this.hooks.getState();
     const dir = this.hooks.canMove() && this.endingStart < 0 ? this.hooks.getDir() : { x: 0, y: 0 };
-    let dx = dir.x, dy = dir.y;
-    const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
     const wasMoving = this.moving;
-    this.moving = m > 0.01;
-    if (this.moving) {
-      if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) { this.facing = dx > 0 ? 1 : -1; this.dirName = 'side'; }
-      else if (dy !== 0) this.dirName = dy > 0 ? 'down' : 'up';
-      const nx = this.px + dx * MOVE_SPEED * dt, ny = this.py + dy * MOVE_SPEED * dt;
-      if (!this.hit(nx, this.py)) this.px = nx;
-      if (!this.hit(this.px, ny)) this.py = ny;
+    if (this.stepT < 1) { // mid-step: glide to the next tile
+      this.stepT = Math.min(1, this.stepT + dt / 0.11);
+      this.px = this.stepFrom.x + (this.stepTo.x - this.stepFrom.x) * this.stepT; this.py = this.stepFrom.y + (this.stepTo.y - this.stepFrom.y) * this.stepT;
       this.walkT += dt;
     }
+    if (this.stepT >= 1) {
+      if (this.endingStart < 0 && s.v2 && this.hooks.dispatch && Number.isFinite(s.v2.gridX) && (s.v2.gridX !== this.tile.tx || s.v2.gridY !== this.tile.ty)) this.setTile(s.v2.gridX, s.v2.gridY); // sim is authoritative
+      this.moving = false;
+      if (dir.x || dir.y) this.tryStep(dir, s);
+    } else this.moving = true;
     if (wasMoving && !this.moving) this.hooks.onMoveEnd(Math.round(this.px), Math.round(this.py));
 
-    // focus: nearest within radius, at most two active
-    const near = Object.entries(OBJECT_POSITIONS)
-      .map(([id, p]) => ({ id, d: Math.hypot(p.x - this.px, p.y - this.py) }))
-      .filter(o => o.d <= INTERACT_RADIUS).sort((a, b) => a.d - b.d).slice(0, 2);
-    const f = near[0]?.id ?? null;
-    this.secondId = near[1]?.id ?? null;
+    // focus: nearest object within Chebyshev<=1 of the current tile (same rule the sim uses for INTERACT)
+    const nd = s.nodes[s.player.nodeId];
+    let f: string | null = null, second: string | null = null;
+    if (nd && this.endingStart < 0) {
+      const near = getNearbyInteractables(nd.world, nd.flags, this.tile, s.v2?.realm ?? 'TOWN')
+        .map(id => ({ id, d: Math.hypot(OBJECT_POSITIONS[id].x - this.px, OBJECT_POSITIONS[id].y - this.py) })).sort((p, q) => p.d - q.d);
+      f = near[0]?.id ?? null; second = near[1]?.id ?? null;
+    }
+    this.secondId = second;
     if (f !== this.focusId) { this.focusId = f; this.hooks.onFocus(f); }
 
     this.drawDynamic(time, dt, s);
   }
 
-  private hit(x: number, y: number): boolean {
-    return isBlockedPx(x - 4, y - 3) || isBlockedPx(x + 4, y - 3) || isBlockedPx(x - 4, y) || isBlockedPx(x + 4, y);
+  /** One adjacent step toward `dir`, validated by topology (current node's world+flags); dispatches MOVE. */
+  private tryStep(dir: { x: number; y: number }, s: Readonly<SimulationState>): void {
+    const nd = s.nodes[s.player.nodeId]; if (!nd) return;
+    const realm = s.v2?.realm ?? 'TOWN';
+    const cand: { tx: number; ty: number }[] = [];
+    const h = { tx: this.tile.tx + Math.sign(dir.x), ty: this.tile.ty }, v = { tx: this.tile.tx, ty: this.tile.ty + Math.sign(dir.y) };
+    if (Math.abs(dir.x) >= Math.abs(dir.y)) { if (dir.x) cand.push(h); if (dir.y) cand.push(v); } else { cand.push(v); if (dir.x) cand.push(h); }
+    for (const to of cand) {
+      if (to.tx === this.tile.tx && to.ty === this.tile.ty) continue;
+      if (to.ty !== this.tile.ty) this.dirName = to.ty > this.tile.ty ? 'down' : 'up'; else { this.dirName = 'side'; this.facing = to.tx > this.tile.tx ? 1 : -1; }
+      if (!canWalk(nd.world, nd.flags, this.tile, to, realm)) continue;
+      if (this.hooks.dispatch) {
+        this.hooks.dispatch({ type: 'MOVE', tx: to.tx, ty: to.ty });
+        const v2 = this.hooks.getState().v2;
+        if (v2 && (v2.gridX !== to.tx || v2.gridY !== to.ty)) { this.syncToState(true); continue; } // sim rejected the step
+      }
+      this.stepFrom = { x: this.px, y: this.py }; this.stepTo = { x: to.tx * TT + 8, y: to.ty * TT + 8 };
+      this.tile = to; this.stepT = 0.0001; this.moving = true;
+      return;
+    }
   }
 
   private place(spr: Phaser.GameObjects.Sprite, who: 'player' | 'partner', x: number, y: number, dir: Dir, flip: boolean, moving: boolean, alpha: number, tint?: number): void {
@@ -255,9 +339,45 @@ export class WorldScene extends Phaser.Scene {
     if (spr.anims.currentAnim?.key !== k) spr.play(k);
   }
 
+  private drawScribbleDynamic(g: Phaser.GameObjects.Graphics, t: number, s: Readonly<SimulationState>): void {
+    const cx = this.lastCtx; const reduce = this.hooks.reduce();
+    const alien = s.v2?.realm === 'ALIEN';
+    const idn = s.v2?.playerIdentity ?? this.identity;
+    if (cx) drawScribbleAmbient(g, cx, t, reduce, this.focusId, { lit: this.drawnLamp, lhLit: this.drawnLh });
+    // focus ring on the focused object
+    if (this.focusId) {
+      const p = OBJECT_POSITIONS[this.focusId], ph = reduce ? 0 : Math.sin(t * 3);
+      g.lineStyle(0.9, SK.graphite, 0.85); g.strokeEllipse(p.x, p.y + 5, 15, 7);
+      g.lineStyle(0.6, idn === 'cyan' ? SK.cyan : SK.amber, 1); g.strokeEllipse(p.x, p.y + 5, 15 + ph, 7 + ph * 0.5);
+    }
+    // partner apparitions (never physically present): translucent, dashed, labelled
+    const now = this.time.now; let labelled = false;
+    for (const ap of this.apparitions) {
+      const left = (ap.until - now) / 1000; if (left <= 0) continue;
+      const a = Math.min(0.55, left * 0.5) * (reduce ? 1 : 0.85 + 0.15 * Math.sin(t * 3));
+      this.fx.figure(g, ap.x, ap.y, otherColour(idn), 1, 0, a, true, alien);
+      this.fx.label(true, ap.x, ap.y - 17, Math.min(1, a * 2), ap.label); labelled = true;
+    }
+    if (!labelled) this.fx.label(false, 0, 0, 0);
+    this.apparitions = this.apparitions.filter(a => a.until > now);
+    const ending = this.endingStart >= 0 ? (now - this.endingStart) / 1000 : -1;
+    const col = identityColour(idn);
+    if (ending < 0) {
+      const bob = this.stepT < 1 ? Math.abs(Math.sin(this.stepT * Math.PI)) * 1.6 : 0;
+      this.fx.figure(g, this.px, this.py + 4, col, this.facing, bob, 1, false, alien);
+    } else { // ending: both beings converge, a thread arcs between them
+      const k = Math.min(1, Math.max(0, (ending - 1.2) / 3)), cxm = 160, cym = 110;
+      const ax = 100 + (cxm - 6 - 100) * k, bx = 220 + (cxm + 6 - 220) * k;
+      g.lineStyle(1.1, SK.amber, 0.9); g.beginPath(); g.arc(ax + (bx - ax) / 2, cym - 4, (bx - ax) / 2, Math.PI, Math.PI * (1 + Math.min(1, ending / 2.5)), false); g.strokePath();
+      this.fx.figure(g, ax, cym + 4, col, 1, 0, 1, false, alien); this.fx.figure(g, bx, cym + 4, otherColour(idn), -1, 0, 1, false, alien);
+    }
+    this.fx.prompt(ending < 0 ? this.focusId : null, this.tile.tx, this.tile.ty, t);
+  }
+
   private drawDynamic(time: number, dt: number, s: Readonly<SimulationState>): void {
     const g = this.dyn; g.clear();
     const t = time / 1000;
+    if (ART_SCRIBBLE) { this.drawScribbleDynamic(g, t, s); return; }
     const reduce = this.hooks.reduce();
     const drift = s.realityDrift, strain = s.bondStrain;
     const pw = s.nodes[s.player.nodeId]?.world;
