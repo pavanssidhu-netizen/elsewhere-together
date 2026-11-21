@@ -65,7 +65,7 @@ export interface AnchorState {
   id: AnchorId; playerReady: boolean; partnerReady: boolean; aligned: boolean;
 }
 
-export type Phase = 'BOOT' | 'EXPLORING' | 'FORK' | 'ARCHIVE' | 'ENDING';
+export type Phase = 'BOOT' | 'EXPLORING' | 'FORK' | 'ARCHIVE' | 'ENDING' | 'FADE';
 
 export interface LogEntry { turn: number; text: string; kind: 'event' | 'partner' | 'system' | 'hint'; uncertain?: boolean }
 
@@ -90,9 +90,39 @@ export interface SimulationState {
   pendingFork: { eventInstanceId: string; templateId: string } | null;
   retraceCount: number;
   won: boolean;
+  v2: V2State;
+}
+
+// ---------- V2 additions ----------
+export type Identity = 'amber' | 'cyan'; // presentation-only mapping; sim roles stay player/partner
+export interface JourneyStep {
+  seq: number;
+  tick: number;
+  actor: ActorId;
+  fromNodeId: string;
+  toNodeId: string;
+  action: 'FORK' | 'SEEK' | 'RETRACE' | 'ECHO' | 'ANCHOR' | 'STABILISE' | 'REUNION';
+  eventInstanceId?: string;
+  cause?: string;
+  effect?: string;
+}
+export type Ending = 'WIN' | 'FADE';
+export interface V2State {
+  tick: number;                 // deterministic sim tick (moves/interactions), never wall clock
+  journey: JourneyStep[];       // never trimmed
+  coherenceDebt: number;        // 0..100, rises only while drift/strain are critical; FADE at 100 after warnings
+  warningsIssued: number;
+  playerIdentity: Identity;
+  examined: string[];           // object ids examined (clues, easter egg)
+  realm: 'TOWN' | 'ALIEN';      // alien overgrown variant (easter egg)
+  ending: Ending | null;
+  gridX: number; gridY: number; // player tile in topology (authoritative for INTERACT range)
 }
 
 export type Command =
+  | { type: 'MOVE'; tx: number; ty: number }            // V2: adjacent tile step, validated by topology
+  | { type: 'INTERACT'; objectId: string; choice?: Choice } // V2: validated proximity; forks resolve immediately
+  | { type: 'SET_IDENTITY'; identity: Identity }
   | { type: 'BEGIN_FORK'; templateId: string }          // player interacted with object; phase -> FORK
   | { type: 'CANCEL_FORK' }
   | { type: 'RESOLVE_FORK'; eventInstanceId: string; choice: Choice }
@@ -115,6 +145,11 @@ export type DomainEvent =
   | { type: 'ANCHOR_ALIGNED'; anchorId: AnchorId }
   | { type: 'STRAIN_RECOVERED' }
   | { type: 'WIN' }
+  | { type: 'FADE' }
+  | { type: 'WARNING'; level: 1 | 2 | 3; text: string }      // fair warnings before FADE
+  | { type: 'WORLD_CHANGED'; objectId: string; text: string } // transient in-world caption
+  | { type: 'PARTNER_TRACE'; text: string; objectId?: string } // distant visible change from partner's world
+  | { type: 'REALM'; realm: 'TOWN' | 'ALIEN' }
   | { type: 'REJECTED'; reason: string }; // actionable hint text
 
 export type VoiceCue = 'boot' | 'find' | 'safe' | 'help' | 'echo_received' | 'divergence' | 'overstrain' | 'anchor' | 'final';
