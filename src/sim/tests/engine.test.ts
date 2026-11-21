@@ -1,370 +1,273 @@
-import { describe, it, expect } from 'vitest';
-import { SimEngine, cheapestWinPath, previewFork, TEMPLATES } from '../engine';
-import { planWin as planWinV2 } from '../planner';
-import { planWin, nextCommand } from '../legacyPlanner';
-import { calculateDrift, lca, pathTo } from '../branches';
-import { mulberry32 } from '../rng';
-import type { Command, SimulationState, Choice } from '../types';
+import { describe, expect, it } from 'vitest';
+import { SimEngine, createInitialState, availableActions } from '../engine';
+import { act, objectiveHint, planStep, planWin } from '../planner';
+import type { Command, DomainEvent, SimulationState } from '../types';
+import { getWalkability, OBJECT_TILES, PLAYER_START_TILE } from '../../world/topology';
+import win from './replays/win.json';
+import fade from './replays/fade.json';
+import secret from './replays/secret.json';
 
-const SEED = 48219;
+type Replay = { seed: number; commands: Command[]; expect: string };
 
-function boot(seed = SEED) {
-  const e = new SimEngine(seed);
-  e.dispatch({ type: 'SET_PHASE', phase: 'EXPLORING' });
-  return e;
+function play(r: Replay) {
+  const e = new SimEngine(r.seed, undefined, true);
+  const events: DomainEvent[] = [];
+  const links: string[] = [];
+  for (const c of r.commands) { events.push(...e.dispatch(c)); const l = e.getState().link; if (links[links.length - 1] !== l) links.push(l); }
+  return { e, s: e.getState() as SimulationState, events, links };
 }
-function fork(e: SimEngine, templateId: string, choice: Choice) {
-  const b = e.dispatch({ type: 'BEGIN_FORK', templateId });
-  expect(b.filter(x => x.type === 'REJECTED')).toEqual([]);
-  const id = e.getState().pendingFork!.eventInstanceId;
-  return e.dispatch({ type: 'RESOLVE_FORK', eventInstanceId: id, choice });
+function runPlanner(seed: number, max = 600) {
+  const e = new SimEngine(seed, undefined, true);
+  const events: DomainEvent[] = [];
+  for (let i = 0; i < max * 3 && !e.getState().won && e.getState().phase !== 'FADE'; i++) {
+    const c = planStep(e.getState());
+    if (!c) break;
+    events.push(...e.dispatch(c));
+  }
+  return { e, s: e.getState() as SimulationState, events };
 }
-/** Play the three tutorial forks (SELF) so any template is open afterwards. */
-function partnerReady(e: SimEngine, ...ids: string[]): SimEngine {
-  const st = JSON.parse(JSON.stringify(e.getState())) as SimulationState;
-  for (const a of st.anchors) if (ids.includes(a.id)) a.partnerReady = true;
-  return new SimEngine(st.seed, st);
-}
-function pastTutorial(e: SimEngine) {
-  for (const t of ['lantern', 'greenhouse', 'radio']) fork(e, t, 'SELF');
-}
-const norm = (s: Readonly<SimulationState>) => JSON.stringify(s);
+const goTo = (e: SimEngine, obj: string, action?: Parameters<typeof act>[2]) => {
+  const evs: DomainEvent[] = [];
+  for (let i = 0; i < 200; i++) {
+    const c = act(e.getState(), obj, action);
+    if (!c) throw new Error('unreachable ' + obj);
+    evs.push(...e.dispatch(c));
+    if (c.type === 'INTERACT') return evs;
+  }
+  throw new Error('no arrival');
+};
 
-describe('1 determinism', () => {
-  it('same seed + commands => identical state', () => {
-    const run = () => { const e = boot(); planWin(e, { echoFirst: true }); return norm(e.getState()); };
-    expect(run()).toBe(run());
+describe('replays (seed + exact legal commands)', () => {
+  it('WIN: independent partner progress, both beacons lit, win event, nodes never merged', () => {
+    const { s, events } = play(win as Replay);
+    expect(s.won).toBe(true);
+    expect(events.some(x => x.type === 'WIN')).toBe(true);
+    expect(s.anchors.every(a => a.aligned && a.playerReady && a.partnerReady)).toBe(true);
+    expect(s.nodes[s.player.nodeId].flags).toContain('BEACON_LIT');
+    expect(s.nodes[s.partner.nodeId].flags).toContain('BEACON_LIT');
+    expect(s.partner.site).toBe('BEACON');
+    expect(s.partner.nodeId).not.toBe(s.player.nodeId);
   });
-  it('different seeds diverge in LET_GO outcomes at some point', () => {
-    const outs = new Set<string>();
-    for (let seed = 1; seed < 40; seed++) {
-      const e = boot(seed); fork(e, 'lantern', 'LET_GO');
-      outs.add(e.getState().events[0].selectedOutcome);
-    }
-    expect(outs.size).toBe(2);
+  it('FADE: CONNECTED -> FRAYING -> LAST_SIGNAL -> FADED, in order, with warnings 1 and 2 before', () => {
+    const { s, events, links } = play(fade as Replay);
+    expect(s.phase).toBe('FADE');
+    expect(links.slice(-3)).toEqual(['FRAYING', 'LAST_SIGNAL', 'FADED']);
+    const w = events.filter(x => x.type === 'WARNING').map(x => (x as { level: number }).level);
+    expect(w.slice(-3)).toEqual([1, 2, 3]);
+    expect(events.findIndex(x => x.type === 'FADE')).toBeGreaterThan(events.findIndex(x => x.type === 'WARNING' && x.level === 2));
+    expect(new SimEngine(s.seed, s as never).dispatch({ type: 'MOVE', tx: 7, ty: 5 })[0].type).toBe('REJECTED');
+  });
+  it('SECRET: the echo stones open the alien realm after a repeated motif, and the game is still winnable', () => {
+    const { s, events } = play(secret as Replay);
+    expect(s.v2.secretFound).toBe(true);
+    expect(events.some(x => x.type === 'REALM' && x.realm === 'ALIEN')).toBe(true);
+    expect(s.won).toBe(true);
+  });
+  it('replays are reproducible (same seed + same actions => same records and ending)', () => {
+    const a = play(win as Replay), b = play(win as Replay);
+    expect(JSON.stringify(a.s)).toBe(JSON.stringify(b.s));
+    expect(JSON.stringify(a.events)).toBe(JSON.stringify(b.events));
   });
 });
 
-describe('2 fork correctness', () => {
-  it('creates exactly two distinct children, one active, valid parents, clamped stats', () => {
-    const e = boot();
-    pastTutorial(e);
-    for (let i = 0; i < 6; i++) for (const t of TEMPLATES) {
-      if (e.getState().bondStrain > 70) e.dispatch({ type: 'REST_AT_TERMINAL' });
-      fork(e, t.id, i % 2 ? 'SELF' : 'LET_GO');
-    }
-    const s = e.getState();
-    for (const r of s.events) {
-      const [a, b] = r.childNodeIds;
-      expect(a).not.toBe(b);
-      expect(s.nodes[a].parentId).toBe(r.parentNodeId);
-      expect(s.nodes[b].parentId).toBe(r.parentNodeId);
-      expect(JSON.stringify([s.nodes[a].world, s.nodes[a].flags])).not.toBe(JSON.stringify([s.nodes[b].world, s.nodes[b].flags]));
-      expect([a, b]).toContain(r.activeChildNodeId);
-      const visited = [a, b].filter(id => s.nodes[id].visitState === 'VISITED');
-      expect(visited).toEqual([r.activeChildNodeId]);
-      expect(r.reason.length).toBeGreaterThan(10);
-      expect(r.paid.length).toBeGreaterThan(5);
-    }
-    for (const n of Object.values(s.nodes)) {
-      for (const k of ['light', 'water', 'structure', 'signal', 'growth'] as const) {
-        expect(n.world[k]).toBeGreaterThanOrEqual(0); expect(n.world[k]).toBeLessThanOrEqual(3);
-      }
-      expect(n.world.instability).toBeLessThanOrEqual(100);
-    }
-    expect(s.nodes.N0001.id).toBe('N0001');
-    expect(s.events[0].eventInstanceId).toBe('E0001');
-  });
-  it('has no tutorial order: any object may be the first fork', () => {
-    for (const t of ['tide', 'radio', 'bridge', 'greenhouse', 'lantern']) {
-      const e = boot();
-      expect(e.dispatch({ type: 'BEGIN_FORK', templateId: t }).some(x => x.type === 'REJECTED')).toBe(false);
+describe('causal model invariants', () => {
+  it('no EchoCredit, and Thread messages carry information only', () => {
+    const { s } = runPlanner(3);
+    expect('echoCredits' in s).toBe(false);
+    for (const m of s.messages) {
+      expect(Object.keys(m).every(k => ['from', 'to', 'kind', 'site', 'turn', 'clarity', 'technique', 'text'].includes(k))).toBe(true);
+      expect(['LOCATION', 'WARNING', 'TECHNIQUE', 'CALL']).toContain(m.kind);
     }
   });
-  it('previewFork text depends on state', () => {
-    const e = boot();
-    pastTutorial(e);
-    const p = previewFork(e.getState(), 'bridge');
-    expect(p.A.text.length).toBeGreaterThan(0);
-    expect(['A', 'B']).toContain(p.defaultOutcome);
-  });
-});
-
-describe('3 history persistence', () => {
-  it('retrace keeps nodes and events, no cycles, partner acts', () => {
-    const e = boot();
-    pastTutorial(e);
-    const before = norm({ ...e.getState(), nodes: e.getState().nodes } as SimulationState);
-    const s0 = JSON.parse(before) as SimulationState;
-    e.dispatch({ type: 'RETRACE', targetNodeId: 'root' });
-    const s1 = e.getState();
-    expect(s1.player.nodeId).toBe('root');
-    for (const id of Object.keys(s0.nodes)) {
-      expect(s1.nodes[id]).toBeDefined();
-      expect(s1.nodes[id].parentId).toBe(s0.nodes[id].parentId);
-      expect(s1.nodes[id].world).toEqual(s0.nodes[id].world);
-    }
-    expect(s1.events.slice(0, s0.events.length)).toEqual(s0.events);
-    for (const id of Object.keys(s1.nodes)) { // no cycles: path to root terminates and is unique
-      const p = pathTo(s1.nodes, id);
-      expect(new Set(p).size).toBe(p.length);
-      expect(p[0]).toBe('root');
-    }
-    expect(e.dispatch({ type: 'RETRACE', targetNodeId: 'N9999' })[0].type).toBe('REJECTED');
-  });
-  it('first anchor grants a free retrace', () => {
-    let e = boot();
-    fork(e, 'lantern', 'SELF');
-    e = partnerReady(e, 'LANTERN');
-    const ev = e.dispatch({ type: 'ACTIVATE_ANCHOR', anchorId: 'LANTERN', actor: 'player' });
-    expect(ev.some(x => x.type === 'ANCHOR_ALIGNED')).toBe(true);
-    expect(e.getState().freeRetraceAvailable).toBe(true);
-    const strain = e.getState().bondStrain;
-    e.dispatch({ type: 'RETRACE', targetNodeId: 'root' });
-    expect(e.getState().freeRetraceAvailable).toBe(false);
-    // partner may stabilise (-4) in the same turn, but the retrace itself added nothing
-    expect(e.getState().bondStrain).toBeLessThanOrEqual(strain + 3);
-    const strain2 = e.getState().bondStrain;
-    e.dispatch({ type: 'RETRACE', targetNodeId: e.getState().nodes.root.children[0] });
-    expect(e.getState().bondStrain).toBeGreaterThanOrEqual(strain2 + 4 - 4); // +4 retrace cost, partner may steady -4
-  });
-});
-
-describe('4 distinct risks', () => {
-  it('ECHO +12 strain and worse outcome; SELF +2 and no credit', () => {
-    const a = boot(); fork(a, 'lantern', 'ECHO');
-    const sa = a.getState();
-    expect(sa.events[0].selectedOutcome).toBe('B');
-    expect(sa.echoCredits).toHaveLength(1);
-    expect(sa.events[0].echoId).toBe(sa.echoCredits[0].id);
-    expect(sa.events[0].strainAfter).toBeGreaterThanOrEqual(8); // 12 minus a possible partner stabilise
-    const b = boot(); fork(b, 'lantern', 'SELF');
-    expect(b.getState().echoCredits).toHaveLength(0);
-    expect(b.getState().events[0].selectedOutcome).toBe('A');
-    expect(b.getState().bondStrain).toBeLessThanOrEqual(2 + 3); // + a possible partner assist
-  });
-  it('drift is independent of strain', () => {
-    const e = boot(); fork(e, 'lantern', 'SELF');
-    const s = e.getState();
-    expect(s.realityDrift).toBe(calculateDrift(s));
-  });
-});
-
-describe('5 echo conservation', () => {
-  it('credit is consumed at most once; queue cap protected', () => {
-    const e = boot();
-    fork(e, 'lantern', 'SELF'); fork(e, 'greenhouse', 'SELF'); fork(e, 'radio', 'SELF');
-    fork(e, 'bridge', 'ECHO');
-    fork(e, 'tide', 'ECHO');
-    const s = e.getState();
-    // never more than 2 unconsumed
-    expect(s.echoCredits.filter(c => !c.consumed).length).toBeLessThanOrEqual(2);
-    // fill queue deterministically if partner already consumed: check rejection when full
-    const e2 = boot(); pastTutorial(e2);
-    const full = () => e2.getState().echoCredits.filter(c => !c.consumed).length >= 2;
-    for (let i = 0; i < 8 && !full(); i++) {
-      // bridge/tide echo kinds (structure/water) are never useful to the partner here, so they queue
-      if (e2.getState().bondStrain > 60) e2.dispatch({ type: 'REST_AT_TERMINAL' });
-      fork(e2, i % 2 ? 'bridge' : 'tide', 'ECHO');
-    }
-    expect(full()).toBe(true);
-    {
-      e2.dispatch({ type: 'BEGIN_FORK', templateId: 'bridge' });
-      const id = e2.getState().pendingFork!.eventInstanceId;
-      const ev = e2.dispatch({ type: 'RESOLVE_FORK', eventInstanceId: id, choice: 'ECHO' });
-      expect(ev[0].type).toBe('REJECTED');
-      expect(e2.getState().phase).toBe('FORK');
-      e2.dispatch({ type: 'CANCEL_FORK' });
-    }
-    const ids = e2.getState().echoCredits.map(c => c.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const c of e2.getState().echoCredits.filter(c => c.consumed)) {
-      expect(e2.getState().events.filter(r => r.actorId === 'partner' && r.echoId === c.id)).toHaveLength(1);
+  it('the partner is never moved into the player node by seeking; nodes stay distinct through a full run', () => {
+    const e = new SimEngine(5, undefined, true);
+    for (let i = 0; i < 500 && !e.getState().won && e.getState().phase !== 'FADE'; i++) {
+      e.dispatch(planStep(e.getState())!);
+      expect(e.getState().partner.nodeId).not.toBe(e.getState().player.nodeId);
     }
   });
-  it('lantern ECHO is spent by the partner on its own lantern event, once', () => {
-    const e = boot(); fork(e, 'lantern', 'ECHO');
-    const s = e.getState();
-    const pe = s.events.filter(r => r.actorId === 'partner');
-    expect(pe).toHaveLength(1);
-    expect(pe[0].selectedOutcome).toBe('A');
-    expect(pe[0].echoId).toBe(s.echoCredits[0].id);
-    expect(s.echoCredits[0].consumed).toBe(true);
-    e.dispatch({ type: 'ADVANCE_PARTNER' }); e.dispatch({ type: 'ADVANCE_PARTNER' });
-    expect(e.getState().events.filter(r => r.echoId === s.echoCredits[0].id)).toHaveLength(2); // player's creation + one partner spend
+  it('a call costs the caller fuel and strain, and changes nothing physical in the partner world', () => {
+    const e = new SimEngine(1, undefined, true);
+    goTo(e, 'woodpile', 'GATHER');
+    const before = JSON.parse(JSON.stringify(e.getState())) as SimulationState;
+    e.dispatch({ type: 'CALL' });
+    const a = e.getState();
+    expect(a.player.inventory.fuel).toBe(before.player.inventory.fuel - 1);
+    expect(a.bondStrain).toBeGreaterThan(before.bondStrain);
+    expect(a.nodes[a.partner.nodeId].flags).toEqual(before.nodes[before.partner.nodeId].flags);
+    expect(a.partner.inventory.plank).toBe(before.partner.inventory.plank);
   });
-});
-
-describe('6 agent progress', () => {
-  it('every partner turn logs and changes something; terminates', () => {
-    const e = boot();
-    pastTutorial(e);
-    for (let i = 0; i < 40; i++) {
-      const before = norm(e.getState());
-      const logLen = e.getState().log.length;
-      const ev = e.dispatch({ type: 'ADVANCE_PARTNER' });
-      expect(ev.some(x => x.type === 'PARTNER_ACTED')).toBe(true);
-      expect(e.getState().log.length).toBeGreaterThan(Math.min(logLen, 79) - 1);
-      expect(norm(e.getState())).not.toBe(before);
-    }
+  it('the partner learns the sluice technique only if told (or by rare self-discovery), not by magic', () => {
+    const e = new SimEngine(2, undefined, true);
+    expect(e.getState().partner.knowledge).not.toContain('open_sluice');
+    // a message told with clear signal teaches it
+    const s = JSON.parse(JSON.stringify(e.getState())) as SimulationState;
+    s.messages.push({ from: 'player', to: 'partner', kind: 'TECHNIQUE', technique: 'open_sluice', site: 'CROSSING', turn: 0, clarity: 0.95 });
+    const t = new SimEngine(2, s, true);
+    t.dispatch({ type: 'ADVANCE_PARTNER' });
+    expect(t.getState().partner.knowledge).toContain('open_sluice');
   });
-  it('refuses a dangerous request and stabilises instead', () => {
-    const e = boot(); pastTutorial(e);
-    const s = JSON.parse(norm(e.getState())) as SimulationState;
-    s.bondStrain = 80;
-    const e2 = new SimEngine(SEED, s);
-    const ev = e2.dispatch({ type: 'REQUEST_PARTNER', intention: 'HELP_MY_WORLD' });
-    const act = ev.find(x => x.type === 'PARTNER_ACTED');
-    expect(act && act.type === 'PARTNER_ACTED' && act.goal).toBe('STABILISE');
-    expect(e2.getState().log.some(l => l.text.includes('refuses'))).toBe(true);
-  });
-  it('intentions are honoured when safe', () => {
-    const e = boot(); pastTutorial(e);
-    e.dispatch({ type: 'RETRACE', targetNodeId: 'root' });
-    const ev = e.dispatch({ type: 'REQUEST_PARTNER', intention: 'FIND_ME' });
-    expect(ev.some(x => x.type === 'PARTNER_ACTED')).toBe(true);
-  });
-});
-
-describe('7 softlock prevention', () => {
-  it('critical drift can retrace; critical strain can recover', () => {
-    const e = boot(); pastTutorial(e);
-    const s = JSON.parse(norm(e.getState())) as SimulationState;
-    s.bondStrain = 100; s.realityDrift = 100;
-    const e2 = new SimEngine(SEED, s);
-    e2.dispatch({ type: 'RETRACE', targetNodeId: 'root' });
-    expect(e2.getState().player.nodeId).toBe('root');
-    const b = e2.getState().bondStrain;
-    e2.dispatch({ type: 'REST_AT_TERMINAL' });
-    expect(e2.getState().bondStrain).toBeLessThan(b);
-  });
-  it('rest lowers strain by 12', () => {
-    const e = boot(); fork(e, 'lantern', 'ECHO');
-    const s = JSON.parse(norm(e.getState())) as SimulationState;
-    s.bondStrain = 50;
-    s.partner.nodeId = s.player.nodeId; // partner acts but strain change from rest is isolated below
-    const e2 = new SimEngine(SEED, s);
-    const ev = e2.dispatch({ type: 'REST_AT_TERMINAL' });
-    expect(ev.some(x => x.type === 'STRAIN_RECOVERED')).toBe(true);
-    expect(e2.getState().bondStrain).toBeLessThanOrEqual(38 + 3);
-    expect(e2.getState().bondStrain).toBeGreaterThanOrEqual(38 - 4);
-  });
-  it('a randomly mangled run can always be finished by the planner (no softlock)', () => {
-    for (let seed = 1; seed <= 25; seed++) {
-      const rng = mulberry32(seed * 7919);
-      const e = boot(seed);
-      for (let i = 0; i < 14; i++) {
-        const st = e.getState();
-        const r = rng();
-        if (r < 0.5) {
-          const t = TEMPLATES[Math.floor(rng() * 5)].id;
-          const ch: Choice = (['LET_GO', 'SELF', 'ECHO'] as const)[Math.floor(rng() * 3)];
-          fork(e, t, ch);
-        } else if (r < 0.65) {
-          const targets = Object.keys(st.nodes).filter(id => id !== st.player.nodeId);
-          e.dispatch({ type: 'RETRACE', targetNodeId: targets[Math.floor(rng() * targets.length)] });
-        } else if (r < 0.8) e.dispatch({ type: 'REST_AT_TERMINAL' });
-        else if (r < 0.9) e.dispatch({ type: 'REQUEST_PARTNER', intention: (['FIND_ME', 'STAY_SAFE', 'HELP_MY_WORLD'] as const)[Math.floor(rng() * 3)] });
-        else e.dispatch({ type: 'ADVANCE_PARTNER' });
-      }
-      // dismiss any dangling fork, then let the planner finish
-      e.dispatch({ type: 'CANCEL_FORK' });
-      // V2 planner (legal MOVE/INTERACT only) from the mangled state
-      for (const c of planWinV2(e.getState())) e.dispatch(c);
-      expect(e.getState().won, `seed ${seed}`).toBe(true);
-    }
-  });
-});
-
-describe('8 win gating', () => {
-  it('early victory rejected with actionable hints', () => {
-    const e = boot();
-    const ev = e.dispatch({ type: 'ACTIVATE_ANCHOR', anchorId: 'LIGHTHOUSE', actor: 'player' });
-    expect(ev[0].type).toBe('REJECTED');
-    expect(e.getState().won).toBe(false);
-    const ev2 = e.dispatch({ type: 'ACTIVATE_ANCHOR', anchorId: 'LANTERN', actor: 'player' });
-    expect(ev2[0].type === 'REJECTED' && ev2[0].reason).toMatch(/LANTERN|SIGNAL/);
-  });
-  it('high strain is rejected with the rest hint', () => {
-    const e = partnerReady((() => { const x = boot(); fork(x, 'lantern', 'SELF'); return x; })(), 'LANTERN');
-    const s = JSON.parse(norm(e.getState())) as SimulationState;
+  it('the partner refuses when the Thread is overstrained, and does not learn', () => {
+    const s = JSON.parse(JSON.stringify(createInitialState(2))) as SimulationState;
     s.bondStrain = 90;
-    const e2 = new SimEngine(SEED, s);
-    const ev = e2.dispatch({ type: 'ACTIVATE_ANCHOR', anchorId: 'LANTERN', actor: 'player' });
-    expect(ev[0].type === 'REJECTED' && ev[0].reason).toBe('REST AT A THREAD TERMINAL TO LOWER STRAIN');
+    s.messages.push({ from: 'player', to: 'partner', kind: 'TECHNIQUE', technique: 'open_sluice', site: 'CROSSING', turn: 0, clarity: 0.95 });
+    const t = new SimEngine(2, s, true);
+    const ev = t.dispatch({ type: 'ADVANCE_PARTNER' });
+    expect(ev.some(x => x.type === 'VOICE' && x.cue === 'refusal')).toBe(true);
+    expect(t.getState().partner.knowledge).not.toContain('open_sluice');
   });
-  it('earlier-branch hint when an ancestor satisfies the anchor', () => {
-    const e = boot(); fork(e, 'lantern', 'SELF'); fork(e, 'greenhouse', 'SELF'); fork(e, 'radio', 'SELF');
-    // bad lantern: ECHO from lantern node drops light below 2 while signal stays
-    fork(e, 'lantern', 'ECHO');
-    const ev = e.dispatch({ type: 'ACTIVATE_ANCHOR', anchorId: 'LANTERN', actor: 'player' });
-    expect(ev.find(x => x.type === 'REJECTED')).toBeDefined();
+  it('every partner action is in the journey history (no fork needed)', () => {
+    const { s } = runPlanner(4);
+    const hist = s.history.filter(h => h.actor === 'partner').length;
+    const steps = s.v2.journey.filter(j => j.actor === 'partner').length - 1; // minus the opening split
+    expect(hist).toBeGreaterThan(5);
+    expect(steps).toBe(hist);
   });
-  it('full path wins, ENDING, further commands rejected', () => {
-    const e = boot(); const cmds = planWinV2(e.getState()); for (const c of cmds) e.dispatch(c);
-    expect(e.getState().won).toBe(true);
-    expect(e.getState().phase).toBe('ENDING');
-    expect(cmds[cmds.length - 1]).toEqual({ type: 'INTERACT', objectId: 'anchor_LIGHTHOUSE' });
-    const s = e.getState();
-    expect(s.realityDrift).toBeLessThanOrEqual(35);
-    expect(s.bondStrain).toBeLessThanOrEqual(55);
-    expect(s.anchors.every(a => a.aligned)).toBe(true);
-    expect(e.dispatch({ type: 'ADVANCE_PARTNER' })[0].type).toBe('REJECTED');
-  });
-});
-
-describe('9 save / restore', () => {
-  it('round trips', () => {
-    const e = boot(); planWin(e, { maxSteps: 12, echoFirst: true });
-    const json = SimEngine.serialize(e.getState());
-    const back = SimEngine.restore(json)!;
-    expect(back).not.toBeNull();
-    expect(norm(back)).toBe(json);
-    const e2 = new SimEngine(1, back);
-    expect(e2.getState().seed).toBe(SEED);
-    expect(e2.getState().turn).toBe(e.getState().turn);
-    // continuing both produces identical results
-    planWin(e, {}); planWin(e2, {});
-    expect(norm(e2.getState())).toBe(norm(e.getState()));
-  });
-  it('rejects corrupt / wrong version', () => {
-    expect(SimEngine.restore('{nope')).toBeNull();
-    expect(SimEngine.restore(JSON.stringify({ version: 2 }))).toBeNull();
-    const s = JSON.parse(SimEngine.serialize(new SimEngine().getState()));
-    s.player.nodeId = 'ghost';
-    expect(SimEngine.restore(JSON.stringify(s))).toBeNull();
-  });
-  it('subscribe notifies and unsubscribes', () => {
-    const e = new SimEngine(); let n = 0;
-    const off = e.subscribe(() => { n++; });
-    e.dispatch({ type: 'SET_PHASE', phase: 'EXPLORING' }); off();
-    e.dispatch({ type: 'SET_PHASE', phase: 'ARCHIVE' });
-    expect(n).toBe(1);
-  });
-});
-
-describe('cheapestWinPath', () => {
-  it('replays to WIN from seed 48219 and emits WIN + voice cues', () => {
-    const path = cheapestWinPath();
-    const e = new SimEngine(SEED);
-    const seen: string[] = [];
-    for (const c of path as Command[]) for (const ev of e.dispatch(c)) seen.push(ev.type === 'VOICE' ? 'V:' + ev.cue : ev.type);
-    expect(e.getState().won).toBe(true);
-    expect(seen).toContain('WIN');
-    expect(seen).toContain('V:echo_received');
-    expect(seen).toContain('V:final');
-    expect(seen).not.toContain('REJECTED');
-  });
-  it('the V2 planner wins from other seeds too (legal MOVE/INTERACT only)', () => {
-    for (const seed of [SEED, 1, 2, 3, 99, 12345]) {
-      const e = new SimEngine(seed);
-      for (const c of planWinV2(e.getState())) { expect(['MOVE', 'INTERACT']).toContain(c.type); e.dispatch(c); }
-      expect(e.getState().won, `seed ${seed}`).toBe(true);
+  it('forks record every contract field; both outcomes exist; interventions bias but never guarantee', () => {
+    const outcomes = { A: 0, B: 0 };
+    for (let seed = 1; seed <= 80; seed++) {
+      const e = new SimEngine(seed, undefined, true);
+      goTo(e, 'woodpile', 'GATHER');
+      goTo(e, 'lantern', 'OBSERVE');
+      const evs = goTo(e, 'lantern', 'RELIGHT');
+      const f = evs.find(x => x.type === 'FORK_RESOLVED');
+      expect(f).toBeTruthy();
+      const r = (f as Extract<DomainEvent, { type: 'FORK_RESOLVED' }>).record;
+      for (const k of ['sourceObject', 'priorState', 'playerAction', 'outcomeA', 'outcomeB', 'seededRoll', 'chosenOutcome', 'localPhysicalEffect', 'evidenceShown']) expect((r as unknown as Record<string, unknown>)[k]).toBeDefined();
+      expect(r.childNodeIds.length).toBe(2);
+      outcomes[r.chosenOutcome]++;
+      const flags = e.getState().nodes[e.getState().player.nodeId].flags;
+      expect(flags.includes('LANTERN_LIT')).toBe(r.chosenOutcome === 'A');
     }
+    expect(outcomes.A).toBeGreaterThan(20); expect(outcomes.B).toBeGreaterThan(5);
   });
-  it('nextCommand returns null once won', () => {
-    const e = boot(); for (const c of planWinV2(e.getState())) e.dispatch(c);
-    expect(nextCommand(e.getState(), {})).toBeNull();
-    expect(lca(e.getState().nodes, 'root', 'root')).toBe('root');
+  it('blocked interactions return a factual clue with no numbers or stat names', () => {
+    const e = new SimEngine(1, undefined, true);
+    const probes: Array<[string, Parameters<typeof act>[2]]> = [['lantern', 'RELIGHT'], ['bridge', 'BRACE'], ['anchor_LANTERN', 'OBSERVE'], ['anchor_GREENHOUSE', 'OBSERVE'], ['tide', 'OBSERVE']];
+    for (const [obj, a] of probes) {
+      const evs = goTo(e, obj, a);
+      const clue = evs.filter(x => x.type === 'WORLD_CHANGED' || x.type === 'REJECTED').map(x => (x as { text?: string; reason?: string }).text ?? (x as { reason: string }).reason).join(' ');
+      expect(clue.length).toBeGreaterThan(10);
+      expect(clue).not.toMatch(/\d|signal|strain|drift|stat\b/i);
+    }
+    expect(availableActions(e.getState(), 'lantern').find(x => x.action === 'RELIGHT')?.clue).toMatch(/cold/i);
+  });
+  it('an early visit to the lookout shows an unlit beacon and a physical clue, not an order lock', () => {
+    const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
+    const n = s.nodes[s.player.nodeId];
+    n.flags.push('COAST_OPEN'); n.world.water = 1;
+    const e = new SimEngine(1, s, true);
+    const evs = goTo(e, 'anchor_LIGHTHOUSE', 'BEACON');
+    const t = evs.filter(x => x.type === 'WORLD_CHANGED').map(x => (x as { text: string }).text).join(' ');
+    expect(t).toMatch(/bowl is empty|cold/i);
+    expect(t).not.toMatch(/first|before|tutorial|\d/i);
+    expect(e.getState().won).toBe(false);
+  });
+  it('changed terrain changes both engine movement and the display walkability', () => {
+    const e = new SimEngine(1, undefined, true);
+    const s0 = e.getState();
+    const n0 = s0.nodes[s0.player.nodeId];
+    expect(getWalkability(n0.world, n0.flags)[5][5]).toBe(false);
+    // the bridge tile is refused by the engine while closed
+    const s = JSON.parse(JSON.stringify(s0)) as SimulationState;
+    s.v2.gridX = 6; s.v2.gridY = 5;
+    expect(new SimEngine(1, s, true).dispatch({ type: 'MOVE', tx: 5, ty: 5 })[0].type).toBe('REJECTED');
+    // open sluice (found by a successful roll) makes the ford walkable in both
+    for (let seed = 1; seed < 40; seed++) {
+      const t = new SimEngine(seed, undefined, true);
+      goTo(t, 'tide', 'OPEN_SLUICE');
+      const st = t.getState(); const n = st.nodes[st.player.nodeId];
+      if (n.flags.includes('COAST_OPEN')) {
+        expect(getWalkability(n.world, n.flags)[7][5]).toBe(true);
+        return;
+      }
+    }
+    throw new Error('no seed opened the sluice');
+  });
+  it('win is never inferred from node ids or a single side', () => {
+    const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
+    s.partner.nodeId = s.player.nodeId;
+    const e = new SimEngine(1, s, true);
+    for (let i = 0; i < 5; i++) e.dispatch({ type: 'ADVANCE_PARTNER' });
+    expect(e.getState().won).toBe(false);
+    // one side ready at the beacon is not a win
+    const t = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
+    t.anchors.forEach(a => { a.playerReady = true; });
+    t.nodes[t.player.nodeId].flags.push('BEACON_LIT');
+    t.v2.gridX = 15; t.v2.gridY = 7;
+    const e2 = new SimEngine(1, t, true);
+    e2.dispatch({ type: 'ADVANCE_PARTNER' });
+    expect(e2.getState().won).toBe(false);
+  });
+  it('anchors have no order lock: GREENHOUSE can be earned before LANTERN, each side independently', () => {
+    const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
+    const n = s.nodes[s.player.nodeId];
+    n.flags = n.flags.filter(f => f !== 'BRIDGE_CLOSED'); s.v2.crossed = true;
+    const e = new SimEngine(1, s, true);
+    goTo(e, 'anchor_GREENHOUSE', 'OBSERVE');
+    const a = e.getState().anchors;
+    expect(a.find(x => x.id === 'GREENHOUSE')!.playerReady).toBe(true);
+    expect(a.find(x => x.id === 'GREENHOUSE')!.aligned).toBe(false); // the partner has not earned its side
+    expect(a.find(x => x.id === 'LANTERN')!.playerReady).toBe(false);
+  });
+  it('three ineffective interactions in a row escalate with a concrete next step', () => {
+    const e = new SimEngine(1, undefined, true);
+    goTo(e, 'lantern', 'RELIGHT');
+    const out: DomainEvent[] = [];
+    for (let i = 0; i < 3; i++) out.push(...e.dispatch({ type: 'INTERACT', objectId: 'lantern', action: 'RELIGHT' }));
+    const texts = out.filter(x => x.type === 'WORLD_CHANGED').map(x => (x as { text: string }).text);
+    expect(texts.some(t => /driftwood|dry wood|wood/i.test(t))).toBe(true);
+  });
+  it('INTERACT.choice remains a deprecated alias for a physical action', () => {
+    const e = new SimEngine(1, undefined, true);
+    for (let i = 0; i < 100; i++) { const c = act(e.getState(), 'woodpile'); if (c!.type === 'INTERACT') break; e.dispatch(c!); }
+    const ev = e.dispatch({ type: 'INTERACT', objectId: 'woodpile', choice: 'LET_GO' });
+    expect(ev.some(x => x.type === 'REJECTED')).toBe(false);
+    expect(e.getState().player.inventory.fuel).toBe(1);
+  });
+  it('objectiveHint is observation-based and names a physical step', () => {
+    const h = objectiveHint(createInitialState(1));
+    expect(h.text).toMatch(/wood|fire|lantern/i);
+    expect(h.text).not.toMatch(/\d/);
+  });
+  it('save / restore round-trips', () => {
+    const { s } = runPlanner(2, 30);
+    const back = SimEngine.restore(SimEngine.serialize(s));
+    expect(back).not.toBeNull();
+    expect(JSON.stringify(back)).toBe(JSON.stringify(s));
+  });
+});
+
+describe('quality gates (small, fast)', () => {
+  it('planner wins from 30 seeds, never softlocks, and planWin(state) is legal and winning', () => {
+    let wins = 0;
+    for (let seed = 1; seed <= 30; seed++) if (runPlanner(seed).s.won) wins++;
+    expect(wins).toBeGreaterThanOrEqual(28);
+    const e = new SimEngine(1, undefined, true);
+    const plan = planWin(e);
+    const p = new SimEngine(1, undefined, true);
+    for (const c of plan) p.dispatch(c);
+    expect(p.getState().won).toBe(true);
+    expect(e.getState().v2.tick).toBe(0); // planWin never mutates its input
+    expect(PLAYER_START_TILE).toBeTruthy(); expect(OBJECT_TILES.planks).toBeTruthy();
+  });
+  it('a player who only walks around is warned and then fades (no stranding)', () => {
+    const e = new SimEngine(1, undefined, true);
+    const links = new Set<string>();
+    for (let i = 0; i < 400 && e.getState().phase !== 'FADE'; i++) {
+      e.dispatch({ type: 'ADVANCE_PARTNER' });
+      links.add(e.getState().link);
+    }
+    expect(e.getState().phase === 'FADE' || e.getState().won).toBe(true);
+    if (e.getState().phase === 'FADE') expect([...links]).toEqual(expect.arrayContaining(['FRAYING', 'LAST_SIGNAL', 'FADED']));
+  });
+  it('resting at a safe site is a real recovery from LAST_SIGNAL', () => {
+    const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
+    s.link = 'LAST_SIGNAL'; s.bondStrain = 75; s.v2.gridX = 11; s.v2.gridY = 6;
+    const e = new SimEngine(1, s, true);
+    const ev = e.dispatch({ type: 'INTERACT', objectId: 'anchor_LANTERN', action: 'REST' });
+    expect(ev.some(x => x.type === 'REJECTED')).toBe(false);
+    expect(e.getState().bondStrain).toBeLessThan(60);
+    expect(e.getState().link).not.toBe('FADED');
   });
 });

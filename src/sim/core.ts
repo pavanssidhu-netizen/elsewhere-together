@@ -1,19 +1,25 @@
-// Shared mutation helpers used by engine.ts and agent.ts. All functions mutate the (already cloned) state.
+// Shared mutation helpers used by engine.ts, forks.ts and partner.ts. All functions mutate the (already cloned) state.
 import type {
-  ActorId, Choice, DomainEvent, EventRecord, JourneyStep, LogEntry, SimulationState, VoiceCue, Stats,
+  ActorHistory, ActorId, ActorState, AnchorState, DomainEvent, JourneyStep, LogEntry, SimulationState, Site, VoiceCue,
 } from './types';
-import { TEMPLATE_BY_ID, adaptOutcome, applyDelta, mergeFlags } from './events';
-import { calculateDrift } from './branches';
-import { refreshAnchors } from './anchors';
-import { eventId, nodeId } from './rng';
-
-export const NODE_SOFT_CAP = 48;        // archive size target
-export const PARTNER_EVENT_NODE_CAP = 20; // partner stops creating optional events beyond this
-export const ECHO_QUEUE_CAP = 2;
-export const REST_RECOVERY = 12;
-export const OVERSTRAIN = 85;           // partner.stable = strain < OVERSTRAIN
+import { TUNING } from './tuning';
+import { lineageDistance } from './branches';
+import { WARNINGS, FADE_TEXT } from '../content/dialogue';
 
 export const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
+
+export const actorOf = (s: SimulationState, who: ActorId): ActorState => (who === 'player' ? s.player : s.partner);
+export const nodeOf = (s: SimulationState, who: ActorId) => s.nodes[actorOf(s, who).nodeId];
+export const hasFlag = (s: SimulationState, who: ActorId, f: string) => nodeOf(s, who).flags.includes(f);
+export const routeOpen = (s: SimulationState, who: ActorId) => {
+  const n = nodeOf(s, who);
+  return !n.flags.includes('BRIDGE_CLOSED') || n.world.water <= 1;
+};
+export const coastOpen = (s: SimulationState, who: ActorId) => {
+  const n = nodeOf(s, who);
+  return n.flags.includes('COAST_OPEN') && n.world.water <= 2;
+};
+export const anchorOf = (s: SimulationState, id: string): AnchorState => s.anchors.find(a => a.id === id)!;
 
 export function addLog(s: SimulationState, text: string, kind: LogEntry['kind'], uncertain?: boolean): void {
   const e: LogEntry = { turn: s.turn, text, kind };
@@ -22,14 +28,16 @@ export function addLog(s: SimulationState, text: string, kind: LogEntry['kind'],
   if (s.log.length > 80) s.log.splice(0, s.log.length - 80);
 }
 
-export function recompute(s: SimulationState): void {
-  s.bondStrain = clamp100(s.bondStrain);
-  s.partner.stable = s.bondStrain < OVERSTRAIN;
-  refreshAnchors(s);
-  s.realityDrift = calculateDrift(s);
+export function addStep(s: SimulationState, step: Omit<JourneyStep, 'seq' | 'tick'>): void {
+  s.v2.journey.push({ seq: s.v2.journey.length + 1, tick: s.v2.tick, ...step });
 }
 
-export function pendingEchoes(s: SimulationState) { return s.echoCredits.filter(c => !c.consumed); }
+export function addHistory(s: SimulationState, who: ActorId, site: Site, action: string, outcome?: string, evidence?: string): void {
+  const h: ActorHistory = { turn: s.turn, actor: who, nodeId: actorOf(s, who).nodeId, site, action };
+  if (outcome) h.outcome = outcome;
+  if (evidence) h.evidence = evidence;
+  s.history.push(h);
+}
 
 function lastVoiceTurn(s: SimulationState, cue: VoiceCue): number | null {
   let last: number | null = null;
@@ -46,46 +54,82 @@ export function voice(s: SimulationState, out: DomainEvent[], cue: VoiceCue, tex
   if (!s.seenDialogueIds.includes(cue)) s.seenDialogueIds.push(cue);
   s.seenDialogueIds.push(`${cue}@${s.turn}`);
   out.push({ type: 'VOICE', cue, text });
+  addLog(s, text, 'partner');
 }
 
-/** Create exactly two child nodes for `actor`, move the actor into the selected one, record the event. */
-export function applyEvent(
-  s: SimulationState, actor: ActorId, templateId: string, choice: Choice, selected: 'A' | 'B',
-  info: { reason: string; paid: string; echoId?: string },
-): EventRecord {
-  const t = TEMPLATE_BY_ID[templateId];
-  const actorState = actor === 'player' ? s.player : s.partner;
-  const parent = s.nodes[actorState.nodeId];
-  const evId = eventId(s.events.length + 1);
-  const outs = (['A', 'B'] as const).map(id => adaptOutcome(t, id, parent.world));
-  const ids: [string, string] = [nodeId(Object.keys(s.nodes).length), nodeId(Object.keys(s.nodes).length + 1)];
-  (['A', 'B'] as const).forEach((id, i) => {
-    const o = outs[i];
-    const world: Stats = applyDelta(parent.world, o.delta);
-    s.nodes[ids[i]] = {
-      id: ids[i], parentId: parent.id, depth: parent.depth + 1, eventInstanceId: evId, outcomeId: id,
-      world, flags: mergeFlags(parent.flags, o.flags), visitState: id === selected ? 'VISITED' : 'POTENTIAL',
-      children: [], owner: actor,
-    };
-    parent.children.push(ids[i]);
-  });
-  const active = ids[selected === 'A' ? 0 : 1];
-  actorState.nodeId = active;
-  s.occurrences[t.id] = (s.occurrences[t.id] ?? 0) + 1;
-  const rec: EventRecord = {
-    eventInstanceId: evId, templateId: t.id, actorId: actor, parentNodeId: parent.id, childNodeIds: ids,
-    activeChildNodeId: active, selectedOutcome: selected, choice, effects: { ...outs[selected === 'A' ? 0 : 1].delta },
-    reason: info.reason, paid: info.paid, driftAfter: 0, strainAfter: 0, turnNumber: s.turn,
-  };
-  if (info.echoId) rec.echoId = info.echoId;
-  s.events.push(rec);
-  addStep(s, {
-    actor, fromNodeId: parent.id, toNodeId: active, action: choice === 'ECHO' ? 'ECHO' : 'FORK',
-    eventInstanceId: evId, cause: info.reason, effect: info.paid,
-  });
-  return rec;
+// ---- hidden numbers ----
+const KEY_FACTS: Array<(s: SimulationState, w: ActorId) => boolean> = [
+  (s, w) => hasFlag(s, w, 'LANTERN_LIT'),
+  (s, w) => routeOpen(s, w),
+  (s, w) => coastOpen(s, w),
+  (s, w) => hasFlag(s, w, 'GARDEN_GROWN'),
+  (s, w) => hasFlag(s, w, 'BEACON_LIT'),
+];
+
+/** Drift = incompatibility of the two histories and world states. */
+export function calculateDrift(s: SimulationState): number {
+  const lin = TUNING.DRIFT_LINEAGE * Math.min(TUNING.DRIFT_LINEAGE_CAP, lineageDistance(s.nodes, s.player.nodeId, s.partner.nodeId));
+  const mismatch = KEY_FACTS.filter(f => f(s, 'player') !== f(s, 'partner')).length * TUNING.DRIFT_MISMATCH;
+  const water = Math.abs(nodeOf(s, 'player').world.water - nodeOf(s, 'partner').world.water) * TUNING.DRIFT_WATER;
+  const aligned = s.anchors.filter(a => a.aligned).length * TUNING.DRIFT_ANCHOR;
+  return clamp100(lin + mismatch + water - aligned - (s.v2.calm ?? 0));
 }
 
-export function addStep(s: SimulationState, step: Omit<JourneyStep, 'seq' | 'tick'>): void {
-  s.v2.journey.push({ seq: s.v2.journey.length + 1, tick: s.v2.tick, ...step });
+export function refreshAnchors(s: SimulationState): void {
+  for (const a of s.anchors) {
+    a.playerPhysical = a.playerReady; a.partnerPhysical = a.partnerReady;
+    a.aligned = a.playerReady && a.partnerReady; a.coordinated = a.aligned;
+  }
+}
+
+export function recompute(s: SimulationState): void {
+  s.bondStrain = clamp100(s.bondStrain);
+  s.partner.stable = s.bondStrain < TUNING.PARTNER_REFUSE_STRAIN;
+  refreshAnchors(s);
+  s.realityDrift = calculateDrift(s);
+}
+
+export const inDanger = (s: SimulationState): boolean =>
+  s.realityDrift >= TUNING.FRAY_DRIFT || s.bondStrain >= TUNING.FRAY_STRAIN
+  || (s.realityDrift >= TUNING.COMBO_DRIFT && s.bondStrain >= TUNING.COMBO_STRAIN) || s.v2.idleTicks >= TUNING.IDLE_DANGER;
+
+/** Safe sites the player could rest at (physical state only). */
+export function safeSites(s: SimulationState): string[] {
+  const out = ['anchor_LANTERN', 'anchor_GREENHOUSE', 'stones', 'thread_terminal'];
+  if (hasFlag(s, 'player', 'GARDEN_GROWN')) out.push('greenhouse');
+  return out;
+}
+
+/**
+ * Fade state machine CONNECTED -> FRAYING -> LAST_SIGNAL -> FADED.
+ * `kind`: 'action' for a meaningful action (effective forks, calls), 'tick' for any elapsed tick.
+ * `recovery`: this action was the recovery action (does not count as ignoring).
+ */
+export function evalLink(s: SimulationState, out: DomainEvent[], kind: 'action' | 'tick', recovery = false): void {
+  const v = s.v2;
+  if (s.link === 'FADED' || s.won) return;
+  recompute(s);
+  const danger = inDanger(s);
+  if (!danger) {
+    if (s.link !== 'CONNECTED') {
+      s.link = 'CONNECTED'; v.warningsIssued = 0;
+      addLog(s, 'The Thread steadies. Their voice comes back.', 'system');
+    }
+    v.dangerActions = 0; v.dangerTicks = 0;
+    return;
+  }
+  const warn = (lv: 1 | 2 | 3) => { v.warningsIssued = lv; out.push({ type: 'WARNING', level: lv, text: WARNINGS[lv] }); addLog(s, WARNINGS[lv], 'hint'); };
+  if (s.link === 'CONNECTED') { s.link = 'FRAYING'; v.dangerActions = 0; v.dangerTicks = 0; warn(1); return; }
+  if (kind === 'action' && !recovery) v.dangerActions++;
+  if (kind === 'tick') v.dangerTicks++;
+  const escalate = v.dangerActions >= TUNING.DANGER_ACTIONS || v.dangerTicks >= TUNING.DANGER_TICKS;
+  if (!escalate) return;
+  v.dangerActions = 0; v.dangerTicks = 0;
+  if (s.link === 'FRAYING') { s.link = 'LAST_SIGNAL'; warn(2); return; }
+  if (s.link === 'LAST_SIGNAL') {
+    s.link = 'FADED'; warn(3);
+    s.phase = 'FADE'; v.ending = 'FADE';
+    addLog(s, FADE_TEXT, 'system');
+    out.push({ type: 'FADE' });
+  }
 }

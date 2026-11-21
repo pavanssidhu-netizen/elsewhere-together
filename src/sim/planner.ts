@@ -1,163 +1,140 @@
-// V2 planner: acts only through legal MOVE / INTERACT. Used by planWin (demo button), bots and the softlock check.
-import type { Choice, Command, SimulationState } from './types';
+// Observation-based planning for bots, the demo button and hints. Acts only through legal commands (MOVE / INTERACT / CALL / ADVANCE_PARTNER).
+// objectiveHint() reads only what the player can see: own world, inventory, own anchor markers, partner voice lines. No hidden stats.
+import type { Command, PhysicalAction, SimulationState, ThreadMessage } from './types';
 import { SimEngine } from './engine';
-import { ANCHOR_ORDER, ANCHOR_REQS, checkAnchor, playerMeets, type Req } from './anchors';
-import { TEMPLATES } from './events';
-import { pendingEchoes } from './core';
-import { HINTS } from '../content/dialogue';
 import { getWalkability, pathTo } from '../world/topology';
+import { TUNING } from './tuning';
 
-export interface PlanPolicy {
-  /** Choice for a fork the planner wants to take. `purpose`: own need vs donation to the partner. */
-  choose?: (templateId: string, purpose: 'SELF_NEED' | 'DONATE') => Choice;
-  allowEcho?: boolean;       // default true
-  restAbove?: number;        // rest at the terminal above this strain when it matters (default 40)
+export interface Hint {
+  objectId: string;                 // object to walk to ('' when the step is a call or waiting)
+  text: string;                     // physical language, no numbers
+  action?: PhysicalAction | 'CALL' | 'WAIT';
+  call?: { kind: ThreadMessage['kind']; technique?: string };
 }
 
-export const here = (s: Readonly<SimulationState>) => ({ tx: s.v2.gridX, ty: s.v2.gridY });
+type S = Readonly<SimulationState>;
+export const here = (s: S) => ({ tx: s.v2.gridX, ty: s.v2.gridY });
 
 /** Walk toward an object, or interact once in range. null = unreachable right now. */
-export function act(s: Readonly<SimulationState>, objectId: string, choice?: Choice): Command | null {
+export function act(s: S, objectId: string, action?: PhysicalAction): Command | null {
   const n = s.nodes[s.player.nodeId];
   const p = pathTo(n.world, n.flags, here(s), objectId, s.v2.realm);
   if (!p) return null;
-  if (p.length === 0) return choice ? { type: 'INTERACT', objectId, choice } : { type: 'INTERACT', objectId };
+  if (p.length === 0) return action ? { type: 'INTERACT', objectId, action } : { type: 'INTERACT', objectId };
   return { type: 'MOVE', tx: p[0].tx, ty: p[0].ty };
 }
 
-/** Like act, but when the object is cut off (broken bridge, flooded ford or sand) first repairs the way with a SELF pick. */
-export function actR(s: Readonly<SimulationState>, objectId: string, choice?: Choice): Command | null {
-  const c = act(s, objectId, choice);
-  if (c) return c;
-  const n = s.nodes[s.player.nodeId];
-  if (n.flags.includes('BRIDGE_CLOSED')) { const b = act(s, 'bridge', 'SELF'); if (b) return b; }
-  return act(s, 'tide', 'SELF') ?? act(s, 'greenhouse', 'SELF');
-}
+/** Let time pass without moving. */
+export const wait = (_s?: S): Command => ({ type: 'ADVANCE_PARTNER' });
 
-/** Legal step that just lets time pass (partner cadence is tick-based): shuffle between two walkable tiles. */
-export function wait(s: Readonly<SimulationState>): Command | null {
+/** Legal shuffle step (used by wanderers). */
+export function shuffle(s: S): Command | null {
   const n = s.nodes[s.player.nodeId];
   const w = getWalkability(n.world, n.flags, s.v2.realm);
   const f = here(s);
-  const cand = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ tx: f.tx + dx, ty: f.ty + dy }))
-    .filter(c => w[c.ty]?.[c.tx]);
+  const cand = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ tx: f.tx + dx, ty: f.ty + dy })).filter(c => w[c.ty]?.[c.tx]);
   if (!cand.length) return null;
   const c = cand[s.v2.tick % cand.length];
   return { type: 'MOVE', tx: c.tx, ty: c.ty };
 }
 
-export function failingReqs(s: Readonly<SimulationState>, reqs: Req[]): Req[] {
-  const node = s.nodes[s.player.nodeId];
-  return reqs.filter(r => {
-    if (r.flag) return !node.flags.includes(r.flag);
-    const v = node.world[r.stat!];
-    return (r.min !== undefined && v < r.min) || (r.max !== undefined && v > r.max);
-  });
+const has = (s: S, f: string) => s.nodes[s.player.nodeId].flags.includes(f);
+const anchor = (s: S, id: string) => s.anchors.find(a => a.id === id)!;
+const tried = (s: S, a: PhysicalAction) => (s.occurrences['player:' + a] ?? 0) > 0;
+
+/** The last thing the partner said about itself, as the player heard it. */
+export function lastPartnerLine(s: S): string {
+  for (let i = s.log.length - 1; i >= 0; i--) if (s.log[i].kind === 'partner') return s.log[i].text;
+  return '';
 }
 
-function helpsSelf(templateId: string, r: Req): boolean {
-  const t = TEMPLATES.find(x => x.id === templateId)!;
-  const o = t.outcomes[t.selfPreferredOutcome === 'A' ? 0 : 1];
-  if (r.flag) return !!o.flags?.includes(r.flag);
-  const d = o.delta[r.stat!] ?? 0;
-  return (r.min !== undefined && d > 0) || (r.max !== undefined && d < 0);
+/** Safe place the player can rest at right now, if any. */
+export function safePlace(s: S): string | null {
+  if (has(s, 'GARDEN_GROWN')) return 'greenhouse';
+  const n = s.nodes[s.player.nodeId];
+  for (const id of ['anchor_LANTERN', 'stones', 'thread_terminal']) if (pathTo(n.world, n.flags, here(s), id, s.v2.realm)) return id;
+  return null;
 }
 
-export function templateFor(failing: Req[]): string | null {
-  return TEMPLATES.find(t => failing.some(r => helpsSelf(t.id, r)))?.id ?? null;
+export function objectiveHint(s: S, opts: { skipCalls?: boolean } = {}): Hint {
+  const callOk = !opts.skipCalls;
+  const inv = s.player.inventory;
+  const lit = has(s, 'LANTERN_LIT'), beacon = has(s, 'BEACON_LIT');
+  const n = s.nodes[s.player.nodeId];
+  const coast = has(s, 'COAST_OPEN') && n.world.water <= 2;
+  const routeOpen = !has(s, 'BRIDGE_CLOSED') || n.world.water <= 1;
+  const learned = s.v2.learned;
+
+  // 0. Recover when the Thread is thin
+  if (s.link !== 'CONNECTED' && (s.bondStrain > 10 || s.realityDrift >= 30)) {
+    const sp = safePlace(s);
+    if (sp) return { objectId: sp, action: 'REST', text: s.link === 'LAST_SIGNAL' ? 'Their voice is a single note. Rest at a safe place now.' : 'The colours dull. Rest at a safe place until the Thread settles.' };
+  }
+  // 1. fuel: one load each for the lantern and the beacon, one to call
+  const need = (lit ? 0 : 1) + (beacon ? 0 : 1) + (callOk && learned.some(t => !s.v2.shared.includes(t)) ? 1 : 0);
+  if (inv.fuel < need) {
+    if (s.player.taken.wood < TUNING.PILE) return { objectId: 'woodpile', action: 'GATHER', text: 'The fire pit is cold. Dry wood by the trees could catch.' };
+    if (!has(s, 'GARDEN_WITHERED') && (!lit || !beacon)) return { objectId: 'greenhouse', action: 'HARVEST', text: 'The wood is gone. Dry fibre in the garden could catch, but the beds would go bare.' };
+    return { objectId: 'woodpile', action: 'WAIT', text: 'The pile is picked clean. The tide leaves more driftwood in time.' };
+  }
+  // 2. HEAR
+  if (!lit && inv.fuel >= 1) return { objectId: 'lantern', action: s.v2.examined.includes('lantern') ? 'RELIGHT' : 'OBSERVE', text: 'You have fuel. The lantern could catch.' };
+  if (lit && !anchor(s, 'LANTERN').playerReady) return { objectId: 'anchor_LANTERN', action: 'OBSERVE', text: 'The lantern burns. The marker stone by the road should answer.' };
+  // 3. the water
+  if (!coast) {
+    return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'OPEN_SLUICE' : 'OBSERVE', text: 'The ford and the sand path lie under water. The sluice gate could lower the stream.' };
+  }
+  // 4. tell them what worked
+  if (callOk && learned.includes('open_sluice') && !s.v2.shared.includes('open_sluice') && inv.fuel >= 1) {
+    return { objectId: '', action: 'CALL', call: { kind: 'TECHNIQUE', technique: 'open_sluice' }, text: 'The water is down. Call across and tell them how the sluice opens.' };
+  }
+  // 5. FIND
+  if (!s.v2.crossed && routeOpen) return { objectId: 'stones', action: 'OBSERVE', text: 'The ford is dry. Cross to the far bank.' };
+  if (!routeOpen) return { objectId: 'bridge', action: 'BRACE', text: 'The way across is still closed.' };
+  if (s.v2.crossed && !anchor(s, 'GREENHOUSE').playerReady) return { objectId: 'anchor_GREENHOUSE', action: 'OBSERVE', text: 'You have crossed. The garden marker holds the other half of the symbol.' };
+  // 6. beacon
+  if (!beacon) {
+    if (inv.fuel >= 1) return { objectId: 'anchor_LIGHTHOUSE', action: 'BEACON', text: 'The sand path is open. The lookout beacon only needs a flame.' };
+    return { objectId: 'woodpile', action: s.player.taken.wood < TUNING.PILE ? 'GATHER' : 'WAIT', text: 'The beacon bowl is empty. Dry wood would feed it.' };
+  }
+  // 7. wait for the other side, and answer what it says
+  const line = lastPartnerLine(s);
+  if (callOk && /cross|river|sand path/.test(line) && learned.includes('open_sluice') && inv.fuel >= 1) {
+    return { objectId: '', action: 'CALL', call: { kind: 'TECHNIQUE', technique: 'open_sluice' }, text: 'They cannot cross. Call again and tell them how the sluice opens.' };
+  }
+  return { objectId: 'anchor_LIGHTHOUSE', action: 'WAIT', text: 'Your beacon burns. Wait at the lookout for the answering pulse.' };
 }
 
-const OBJ_OF: Record<string, string> = { lantern: 'lantern', bridge: 'bridge', radio: 'radio', greenhouse: 'greenhouse', tide: 'tide' };
-
-/** What the partner still needs from the player's side of the thread. */
-export function partnerNeeds(s: Readonly<SimulationState>): { signal: boolean; growth: boolean } {
-  const pn = s.nodes[s.partner.nodeId];
-  const open = (id: string) => { const a = s.anchors.find(x => x.id === id)!; return !a.aligned && !a.partnerReady; };
-  return {
-    signal: (open('LANTERN') || open('LIGHTHOUSE')) && pn.world.signal < 2,
-    growth: open('GREENHOUSE') && pn.world.growth < 2,
-  };
+export function hintToCommand(s: S, h: Hint): Command | null {
+  if (h.action === 'CALL') return { type: 'CALL', kind: h.call?.kind, technique: h.call?.technique };
+  if (h.action === 'WAIT') {
+    const c = act(s, h.objectId, 'OBSERVE');
+    return c && c.type === 'MOVE' ? c : wait(s);
+  }
+  if (!h.objectId) return null;
+  return act(s, h.objectId, h.action);
 }
 
-export function planStep(s: Readonly<SimulationState>, pol: PlanPolicy = {}): Command | null {
+/** Competent policy: follow the hint; one extra rule, call when the partner's reported blockage matches something you know. */
+export function planStep(s: S): Command | null {
   if (s.won || s.phase === 'ENDING' || s.phase === 'FADE') return null;
-  const choose = pol.choose ?? ((_t, p) => (p === 'DONATE' ? 'ECHO' : 'SELF') as Choice);
-  const allowEcho = pol.allowEcho !== false;
-  const restAbove = pol.restAbove ?? 40;
-  const target = ANCHOR_ORDER.find(id => !s.anchors.find(a => a.id === id)!.aligned)!;
-  const chk = checkAnchor(s as SimulationState, target);
-  if (chk.ok) return actR(s, 'anchor_' + target);
-
-  const rest0 = () => actR(s, 'thread_terminal') ?? wait(s);
-  if (s.realityDrift >= 75 || s.bondStrain >= 80 || s.v2.coherenceDebt >= 20) {
-    // stay clear of the FADE: stones soothe drift and debt, the terminal soothes strain
-    const near = (id: string) => actR(s, id);
-    if (s.bondStrain >= 80) return rest0();
-    if (s.v2.coherenceDebt > 0 || s.realityDrift >= 75) return near('stones') ?? rest0();
-  }
-  const rest = () => actR(s, 'thread_terminal') ?? wait(s);
-  // hysteresis: once at the terminal, rest properly instead of leaving at the threshold
-  if (s.bondStrain > 20 && act(s, 'thread_terminal')?.type === 'INTERACT') return act(s, 'thread_terminal');
-  const needs = partnerNeeds(s);
-  const pend = pendingEchoes(s);
-  if (allowEcho) {
-    for (const [need, kind, tpl] of [[needs.signal, 'signal', 'lantern'], [needs.growth, 'growth', 'greenhouse']] as const) {
-      if (need && !pend.some(c => c.kind === kind) && pend.length < 2) {
-        if (s.bondStrain > 55) return rest();
-        return actR(s, tpl, choose(tpl, 'DONATE'));
-      }
-    }
-  }
-  // own needs for the current target
-  const failing = failingReqs(s, ANCHOR_REQS[target].player);
-  if (failing.length) {
-    const t = templateFor(failing);
-    if (t) return actR(s, OBJ_OF[t], choose(t, 'SELF_NEED')) ?? wait(s);
-  }
-  if (!chk.ok && chk.hint === HINTS.DRIFT) {
-    if ((s.v2.calm ?? 0) >= 50) { const m = actR(s, 'anchor_' + target); if (m && m.type === 'MOVE') return m; }
-    return actR(s, 'stones') ?? rest();
-  }
-  if (!chk.ok && chk.hint === HINTS.REST) return rest();
-  if (s.bondStrain > restAbove && (pend.length > 0 || playerMeets(s as SimulationState, target))) return rest();
-  return wait(s);
+  return hintToCommand(s, objectiveHint(s)) ?? wait(s);
 }
 
-/** Accepts a state (spec) or a SimEngine (Shell demo button). Never mutates its argument. */
-export function planWin(input: Readonly<SimulationState> | { getState(): Readonly<SimulationState> }, pol: PlanPolicy = {}, maxTicks = 900): Command[] {
+/** Accepts a state or a SimEngine. Never mutates its argument. Returns legal commands that win from that state (as far as the planner gets). */
+export function planWin(input: S | { getState(): S }, maxTicks = 700): Command[] {
   const state = 'getState' in input ? input.getState() : input;
   const e = new SimEngine(state.seed, state as SimulationState, true);
   const cmds: Command[] = [];
-  for (let i = 0; i < maxTicks * 2; i++) {
-    const c = planStep(e.getState(), pol);
+  let stall = 0;
+  for (let i = 0; i < maxTicks * 3; i++) {
+    const c = planStep(e.getState());
     if (!c) break;
-    const before = e.getState().v2.tick;
+    const before = e.getState().v2.tick + e.getState().turn;
     e.dispatch(c);
-    if (e.getState().v2.tick === before) break; // rejected: planner stuck
     cmds.push(c);
+    if (e.getState().v2.tick + e.getState().turn === before) { if (++stall > 6) break; } else stall = 0;
+    if (e.getState().v2.tick > maxTicks) break;
   }
   return cmds;
-}
-
-/** Diegetic next-objective suggestion for a novice: which object to approach and a hint sentence. */
-export function objectiveHint(s: Readonly<SimulationState>): { objectId: string; text: string; verb?: Choice } {
-  const target = ANCHOR_ORDER.find(id => !s.anchors.find(a => a.id === id)!.aligned)!;
-  const chk = checkAnchor(s as SimulationState, target);
-  if (chk.ok) return { objectId: 'anchor_' + target, text: `The ${target.toLowerCase()} anchor is ready.` };
-  if (s.v2.coherenceDebt >= 30) return { objectId: 'stones', text: 'The old stones can calm the thread.' };
-  if (s.bondStrain > 55) return { objectId: 'thread_terminal', text: HINTS.REST };
-  const failing = failingReqs(s, ANCHOR_REQS[target].player);
-  const t = templateFor(failing);
-  if (t) return { objectId: OBJ_OF[t], text: `The ${t} needs your attention.`, verb: 'SELF' };
-  // Partner-side need: tell the player what their partner is missing and which verb helps.
-  const needs = partnerNeeds(s);
-  const pend = pendingEchoes(s);
-  if (needs.signal && !pend.some(c => c.kind === 'signal') && pend.length < 2)
-    return { objectId: 'lantern', text: 'Their light keeps failing. At the lamp, send it across (Q).', verb: 'ECHO' };
-  if (needs.growth && !pend.some(c => c.kind === 'growth') && pend.length < 2)
-    return { objectId: 'greenhouse', text: 'Their seedlings are dying. At the nursery, send it across (Q).', verb: 'ECHO' };
-  const useful = pend.some(c => (c.kind === 'signal' && needs.signal) || (c.kind === 'growth' && needs.growth));
-  if (useful) return { objectId: 'thread_terminal', text: 'Your gift is still travelling. Rest at the terminal while it arrives.' };
-  if (!chk.ok && chk.hint === HINTS.DRIFT) return { objectId: 'stones', text: chk.hint };
-  return { objectId: 'thread_terminal', text: chk.ok ? '' : chk.hint };
 }

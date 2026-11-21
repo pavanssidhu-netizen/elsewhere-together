@@ -1,132 +1,188 @@
 {
-  "SELF_ONLY": {
-    "seeds": 500,
-    "win": 42.8,
-    "fade": 0,
-    "timeout": 57.2,
-    "softlock": 0,
-    "medianTicks": 600,
-    "medianInteractions": 3,
-    "echoesDonated": 0,
-    "echoesConsumed": 0,
-    "maxDrift": 16,
-    "maxStrain": 24,
-    "eggRate": 0,
-    "winningAnchorOrders": [
-      "LGL"
-    ],
-    "winningStrategies": 1
-  },
-  "ECHO_HEAVY": {
-    "seeds": 500,
-    "win": 100,
-    "fade": 0,
+  "planner": {
+    "seeds": 200,
+    "win": 99.5,
+    "fade": 0.5,
     "timeout": 0,
-    "softlock": 0,
-    "medianTicks": 66,
-    "medianInteractions": 20,
-    "echoesDonated": 6.9,
-    "echoesConsumed": 5.9,
-    "maxDrift": 70,
-    "maxStrain": 86,
-    "eggRate": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 80,
+    "medianInteractions": 13,
+    "avgCalls": 1.3,
+    "secretRate": 0,
+    "maxDrift": 57,
+    "maxStrain": 35,
     "winningAnchorOrders": [
       "LGL"
     ],
-    "winningStrategies": 2
+    "winningStrategies": 3,
+    "winSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "fadeSeedSample": [
+      83
+    ],
+    "timeoutSeedSample": []
   },
-  "LET_GO_HEAVY": {
-    "seeds": 500,
-    "win": 94.6,
-    "fade": 0,
-    "timeout": 5.4,
-    "softlock": 0,
-    "medianTicks": 72,
+  "guided_novice": {
+    "seeds": 200,
+    "win": 98.5,
+    "fade": 1.5,
+    "timeout": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 161,
+    "medianInteractions": 21,
+    "avgCalls": 1.2,
+    "secretRate": 0,
+    "maxDrift": 63,
+    "maxStrain": 35,
+    "winningAnchorOrders": [
+      "LGL",
+      "LLG",
+      "GLL"
+    ],
+    "winningStrategies": 16,
+    "winSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "fadeSeedSample": [
+      5,
+      97,
+      163
+    ],
+    "timeoutSeedSample": []
+  },
+  "mostly_calls": {
+    "seeds": 200,
+    "win": 0,
+    "fade": 100,
+    "timeout": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 186,
+    "medianInteractions": 10,
+    "avgCalls": 9,
+    "secretRate": 0,
+    "maxDrift": 53,
+    "maxStrain": 76,
+    "winningAnchorOrders": [],
+    "winningStrategies": 0,
+    "winSeedSample": [],
+    "fadeSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "timeoutSeedSample": []
+  },
+  "cautious_self": {
+    "seeds": 200,
+    "win": 81.5,
+    "fade": 18.5,
+    "timeout": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 128,
     "medianInteractions": 11,
-    "echoesDonated": 0,
-    "echoesConsumed": 0,
-    "maxDrift": 70,
-    "maxStrain": 30,
-    "eggRate": 0,
+    "avgCalls": 0,
+    "secretRate": 0,
+    "maxDrift": 57,
+    "maxStrain": 17,
     "winningAnchorOrders": [
       "LGL"
     ],
-    "winningStrategies": 1
+    "winningStrategies": 4,
+    "winSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "fadeSeedSample": [
+      10,
+      24,
+      36
+    ],
+    "timeoutSeedSample": []
   },
-  "RANDOM_CURIOUS": {
-    "seeds": 500,
-    "win": 2.6,
-    "fade": 0,
-    "timeout": 97.4,
-    "softlock": 0,
-    "medianTicks": 600,
-    "medianInteractions": 409,
-    "echoesDonated": 9.8,
-    "echoesConsumed": 8.7,
-    "maxDrift": 80,
-    "maxStrain": 82,
-    "eggRate": 6.4,
+  "random_interactor": {
+    "seeds": 200,
+    "win": 0,
+    "fade": 88.5,
+    "timeout": 11.5,
+    "timeoutWithNextStep": 23,
+    "medianTicks": 392,
+    "medianInteractions": 47,
+    "avgCalls": 3.3,
+    "secretRate": 1,
+    "maxDrift": 63,
+    "maxStrain": 67,
+    "winningAnchorOrders": [],
+    "winningStrategies": 0,
+    "winSeedSample": [],
+    "fadeSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "timeoutSeedSample": [
+      17,
+      34,
+      40
+    ]
+  },
+  "reckless": {
+    "seeds": 200,
+    "win": 0,
+    "fade": 100,
+    "timeout": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 164,
+    "medianInteractions": 4,
+    "avgCalls": 4.3,
+    "secretRate": 0,
+    "maxDrift": 30,
+    "maxStrain": 40,
+    "winningAnchorOrders": [],
+    "winningStrategies": 0,
+    "winSeedSample": [],
+    "fadeSeedSample": [
+      1,
+      2,
+      3
+    ],
+    "timeoutSeedSample": []
+  },
+  "secret_hunter": {
+    "seeds": 200,
+    "win": 99.5,
+    "fade": 0.5,
+    "timeout": 0,
+    "timeoutWithNextStep": 0,
+    "medianTicks": 93,
+    "medianInteractions": 18,
+    "avgCalls": 1.3,
+    "secretRate": 100,
+    "maxDrift": 57,
+    "maxStrain": 35,
     "winningAnchorOrders": [
       "LGL",
       "GLL"
     ],
-    "winningStrategies": 13
-  },
-  "PLANNER": {
-    "seeds": 500,
-    "win": 100,
-    "fade": 0,
-    "timeout": 0,
-    "softlock": 0,
-    "medianTicks": 38,
-    "medianInteractions": 10,
-    "echoesDonated": 2,
-    "echoesConsumed": 2,
-    "maxDrift": 30,
-    "maxStrain": 32,
-    "eggRate": 0,
-    "winningAnchorOrders": [
-      "LGL"
+    "winningStrategies": 4,
+    "winSeedSample": [
+      1,
+      2,
+      3
     ],
-    "winningStrategies": 1
-  },
-  "MALICIOUS": {
-    "seeds": 500,
-    "win": 0,
-    "fade": 100,
-    "timeout": 0,
-    "softlock": 0,
-    "medianTicks": 78,
-    "medianInteractions": 47,
-    "echoesDonated": 19.2,
-    "echoesConsumed": 17.8,
-    "maxDrift": 80,
-    "maxStrain": 100,
-    "eggRate": 0,
-    "winningAnchorOrders": [],
-    "winningStrategies": 0
-  },
-  "NOVICE": {
-    "seeds": 500,
-    "win": 100,
-    "fade": 0,
-    "timeout": 0,
-    "softlock": 0,
-    "medianTicks": 35,
-    "medianInteractions": 10,
-    "echoesDonated": 1.9,
-    "echoesConsumed": 1.8,
-    "maxDrift": 70,
-    "maxStrain": 68,
-    "eggRate": 0,
-    "winningAnchorOrders": [
-      "LGL"
+    "fadeSeedSample": [
+      7
     ],
-    "winningStrategies": 7
+    "timeoutSeedSample": []
   },
   "_meta": {
-    "seeds": 500,
-    "maxTicks": 600,
-    "note": "softlock = planner cannot win from first-warning (FADE) or final (TIMEOUT) state"
+    "seeds": 200,
+    "maxTicks": 700,
+    "note": "timeoutWithNextStep = timeouts where an observation-based hint still named a next physical step"
   }
 }

@@ -37,6 +37,9 @@ export const OBJECT_TILES: Record<string, GridCell> = {
   anchor_GREENHOUSE: cell(16, 3),
   anchor_LIGHTHOUSE: cell(16, 7),
   stones: cell(3, 5),
+  // V3 additions (ids/coords of the above are stable)
+  planks: cell(7, 7),      // plank pile, east bank, near the crossing
+  woodpile: cell(8, 2),    // dry wood by the trees
 };
 
 export const PLAYER_START_TILE: GridCell = cell(7, 5);
@@ -115,3 +118,15 @@ export function pathTo(world: Stats, flags: string[], from: GridCell, objectId: 
   for (let c: GridCell | null = best; c && !(c.tx === from.tx && c.ty === from.ty); c = prev.get(c.tx + ',' + c.ty) ?? null) path.push(c);
   return path.reverse();
 }
+
+// ---------- V3: sites (information granularity shared by the partner) ----------
+export type Site = 'CLEARING' | 'CROSSING' | 'GARDEN' | 'TOWER' | 'BEACON';
+export const OBJECT_SITE: Record<string, Site> = {
+  lantern: 'CLEARING', anchor_LANTERN: 'CLEARING', woodpile: 'CLEARING',
+  bridge: 'CROSSING', tide: 'CROSSING', planks: 'CROSSING',
+  greenhouse: 'GARDEN', anchor_GREENHOUSE: 'GARDEN',
+  radio: 'TOWER', stones: 'TOWER', thread_terminal: 'TOWER',
+  anchor_LIGHTHOUSE: 'BEACON',
+};
+/** The river runs down column 5; tiles with tx <= 4 are the far (west) bank. */
+export const isWestBank = (tx: number): boolean => tx <= 4;
