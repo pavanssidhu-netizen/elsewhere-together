@@ -12,7 +12,7 @@ import {
 } from './core';
 import { echoId } from './rng';
 import { ALIEN_TEXT, FADE_TEXT, HINTS, INTRO, STONES_TEXT, TERMINAL_TEXT, TOO_FAR, VOICE_LINES, WARNINGS } from '../content/dialogue';
-import { planWin } from './plan';
+import { planWin } from './planner';
 
 export { TEMPLATES, previewFork };
 

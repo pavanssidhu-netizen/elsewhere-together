@@ -112,7 +112,9 @@ export function planStep(s: Readonly<SimulationState>, pol: PlanPolicy = {}): Co
   return wait(s);
 }
 
-export function planWin(state: Readonly<SimulationState>, pol: PlanPolicy = {}, maxTicks = 900): Command[] {
+/** Accepts a state (spec) or a SimEngine (Shell demo button). Never mutates its argument. */
+export function planWin(input: Readonly<SimulationState> | { getState(): Readonly<SimulationState> }, pol: PlanPolicy = {}, maxTicks = 900): Command[] {
+  const state = 'getState' in input ? input.getState() : input;
   const e = new SimEngine(state.seed, state as SimulationState);
   const cmds: Command[] = [];
   for (let i = 0; i < maxTicks * 2; i++) {

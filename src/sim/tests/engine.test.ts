@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SimEngine, cheapestWinPath, previewFork, TEMPLATES } from '../engine';
-import { planWin as planWinV2 } from '../plan';
+import { planWin as planWinV2 } from '../planner';
 import { planWin, nextCommand } from '../legacyPlanner';
 import { calculateDrift, lca, pathTo } from '../branches';
 import { mulberry32 } from '../rng';
