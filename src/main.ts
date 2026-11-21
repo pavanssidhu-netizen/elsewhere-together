@@ -1,15 +1,15 @@
 import Phaser from 'phaser';
 import './ui/styles.css';
-import { SimEngine, TEMPLATES, cheapestWinPath } from './sim/engine';
-import type { Command, DomainEvent, SimulationState, Intention, Choice } from './sim/types';
+import { SimEngine, TEMPLATES } from './sim/engine';
+import * as planner from './sim/planner';
+import type { Command, DomainEvent, SimulationState, Identity, Choice } from './sim/types';
 import { AudioEngine } from './audio/audioEngine';
 import { WorldScene } from './game/WorldScene';
-import { ART_INK, INK_SCALE, toggleArtStyle } from './game/artStyle';
-import { OBJECT_POSITIONS, OBJECT_LABELS, PLAYER_START, VIEW_W, VIEW_H, isBlockedPx } from './game/layout';
-import { Shell } from './ui/shell';
-import { ancestors, tpl } from './ui/panels';
+import { ART_INK, INK_SCALE } from './game/artStyle';
+import { OBJECT_LABELS, VIEW_W, VIEW_H } from './game/layout';
+import { Shell, type Verb } from './ui/shell';
 
-const SAVE_KEY = 'elsewhere-together-save-v1';
+const SAVE_KEY = 'elsewhere-together-save-v1'; // same key on purpose: old (no `v2`) saves are detected and a new game is offered
 const PREF_KEY = 'elsewhere-together-prefs-v1';
 const SEED = 48219;
 
@@ -19,7 +19,7 @@ try { const p = JSON.parse(localStorage.getItem(PREF_KEY) ?? 'null'); if (p) pre
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
 
 // ---------- engine / save ----------
-let corrupt = false;
+let stale = false; // a save exists but is unreadable or from an earlier version
 let engine: SimEngine;
 let unsub: (() => void) | null = null;
 function loadSaved(): SimulationState | null {
@@ -27,146 +27,144 @@ function loadSaved(): SimulationState | null {
   try { raw = localStorage.getItem(SAVE_KEY); } catch { /* ignore */ }
   if (!raw) return null;
   const r = SimEngine.restore(raw);
-  if (!r) corrupt = true;
+  if (!r) stale = true;
   return r;
 }
 const saved = loadSaved();
 engine = saved ? new SimEngine(SEED, saved) : new SimEngine(SEED);
 const persist = () => { try { localStorage.setItem(SAVE_KEY, SimEngine.serialize(engine.getState() as SimulationState)); } catch { /* quota/private mode: play on */ } };
+const hasSave = (): boolean => !!saved && !stale && engine.getState().turn > 0;
 
 // ---------- state shared with scene ----------
 const audio = new AudioEngine();
 audio.setMuted(prefs.muted);
 let focusId: string | null = null;
-let demoRunning = false;
 let demoToken = 0;
-let started = false;
+let demoRunning = false;
+let playing = false;
+let endTimer = 0;
 const keys = new Set<string>();
 let touchDir = { x: 0, y: 0 };
 let scene: WorldScene;
 let prevDrift = engine.getState().realityDrift;
 
 const send = (cmd: Command): DomainEvent[] => engine.dispatch(cmd);
+const isFork = (id: string | null): boolean => !!id && TEMPLATES.some(t => t.triggerObjectId === id);
+const sceneAny = (): any => scene as any;
 
 const shell: Shell = new Shell(document.getElementById('app')!, {
-  act: () => act(),
-  call: () => { send({ type: 'REQUEST_PARTNER', intention: engine.getState().intention }); },
-  openArchive: () => toggleArchive(true),
-  retraceSelected: () => retraceSelected(),
-  intention: (i: Intention) => { send({ type: 'REQUEST_PARTNER', intention: i }); },
-  rest: () => { sendAtObject('thread_terminal', { type: 'REST_AT_TERMINAL' }); },
-  forkChoice: (c: Choice) => {
-    const pf = engine.getState().pendingFork; if (pf) send({ type: 'RESOLVE_FORK', eventInstanceId: pf.eventInstanceId, choice: c });
-  },
-  cancelFork: () => { send({ type: 'CANCEL_FORK' }); },
-  retraceTo: (id: string) => { send({ type: 'RETRACE', targetNodeId: id }); },
-  select: (id: string) => { shell.selected = id; shell.render(engine.getState()); },
-  closeArchive: () => toggleArchive(false),
-  start: () => startGame(),
-  newGame: () => newGame(false),
-  demo: () => { startGame(true); },
-  playAgain: () => newGame(true),
+  play: () => (hasSave() ? continueGame() : newGame()),
+  cont: () => continueGame(),
+  newGame: () => newGame(),
+  demo: () => startDemo(),
+  identity: (i) => chooseIdentity(i),
+  verb: (v) => interact(v),
+  dir: (x, y) => { touchDir = { x, y }; },
   toggleMute: () => { prefs.muted = !prefs.muted; shell.muted = prefs.muted; audio.setMuted(prefs.muted); savePrefs(); shell.render(engine.getState()); },
   toggleReduce: () => { prefs.reduce = !prefs.reduce; shell.reduce = prefs.reduce; savePrefs(); shell.render(engine.getState()); },
-  dir: (x, y) => { touchDir = { x, y }; },
-  tab: (t) => {
-    if (t === 'archive') toggleArchive(true);
-    else { if (engine.getState().phase === 'ARCHIVE') toggleArchive(false); shell.setTab(t); }
-  },
+  openArchive: () => { audio.playSfx('archive_open'); shell.openArchive(engine.getState()); },
+  restart: () => restart(),
 });
 shell.muted = prefs.muted; shell.reduce = prefs.reduce;
 
 // ---------- actions ----------
-function canMove(): boolean { const s = engine.getState(); return started && !demoRunning && s.phase === 'EXPLORING' && !s.won && !shell.helpOpen(); }
-
-function sendAtObject(objId: string, cmd: Command): DomainEvent[] {
-  const p = scene?.pos(); if (p) send({ type: 'SET_POSITION', x: p.x, y: p.y });
-  return send(cmd);
-}
-
-function act(): void {
+function canMove(): boolean {
   const s = engine.getState();
-  if (!started || s.phase !== 'EXPLORING') return;
-  if (!focusId) { shell.toast('MOVE NEXT TO A PULSING OBJECT, THEN INTERACT'); return; }
-  if (focusId.startsWith('anchor_')) sendAtObject(focusId, { type: 'ACTIVATE_ANCHOR', anchorId: focusId.slice(7) as 'LANTERN', actor: 'player' });
-  else if (focusId === 'thread_terminal') sendAtObject(focusId, { type: 'REST_AT_TERMINAL' });
-  else {
-    const t = TEMPLATES.find(q => q.triggerObjectId === focusId);
-    if (t) sendAtObject(focusId, { type: 'BEGIN_FORK', templateId: t.id });
-  }
+  return playing && !demoRunning && !shell.overlayOpen() && s.phase !== 'ENDING' && s.phase !== 'FADE' && !s.won;
 }
 
-function toggleArchive(open: boolean): void {
-  const s = engine.getState();
-  if (!started) return;
-  if (open && (s.phase === 'EXPLORING')) { shell.selected = s.player.nodeId; audio.playSfx('archive_open'); send({ type: 'SET_PHASE', phase: 'ARCHIVE' }); }
-  else if (!open && s.phase === 'ARCHIVE') { send({ type: 'SET_PHASE', phase: 'EXPLORING' }); shell.setTab('world'); }
+/** E = keep (SELF) / use, Q = send across (ECHO), F = let it be (LET_GO). Non-fork objects only answer to USE. */
+function interact(v: Verb): void {
+  if (!canMove()) return;
+  if (!focusId) { shell.caption('Move next to something that glows.', 'system', 2500); return; }
+  const fork = isFork(focusId);
+  if (fork === (v === 'USE')) return;
+  const cmd: Command = fork ? { type: 'INTERACT', objectId: focusId, choice: v as Choice } : { type: 'INTERACT', objectId: focusId };
+  send(cmd);
 }
 
-function retraceSelected(): void {
-  const s = engine.getState();
-  if (!started) return;
-  if (s.phase === 'FORK' || s.phase === 'ENDING' || s.won) return;
-  if (s.phase !== 'ARCHIVE') {
-    // archive closed: retrace straight to the nearest visited ancestor if there is one
-    const target = ancestors(s, s.player.nodeId).find(id => s.nodes[id]?.visitState === 'VISITED');
-    if (target) { send({ type: 'RETRACE', targetNodeId: target }); return; }
-    toggleArchive(true); shell.toast('NOTHING TO RETRACE TO YET. SELECT A VISITED ANCESTOR IN THE ARCHIVE'); return;
-  }
-  const n = s.nodes[shell.selected];
-  if (n && n.visitState === 'VISITED' && ancestors(s, s.player.nodeId).includes(n.id)) send({ type: 'RETRACE', targetNodeId: n.id });
-  else shell.toast('RETRACE ONLY GOES BACK TO A VISITED ANCESTOR OF YOUR BRANCH');
-}
-
-function startGame(demo = false): void {
+function beginPlay(): void {
+  playing = true;
   audio.unlock();
-  if (demo) { newGame(false, true); return; }
-  begin();
-}
-function begin(): void {
-  started = true;
-  shell.showStart(false);
+  shell.showPlay();
   const s = engine.getState();
   if (s.phase === 'BOOT') send({ type: 'SET_PHASE', phase: 'EXPLORING' });
   else notify(engine.getState(), []);
-  if (s.won) shell.showEnding();
+  scene?.refresh();
+  window.setTimeout(fitCanvas, 30);
 }
 
-function newGame(fromEnding: boolean, demo = false): void {
-  demoToken++; demoRunning = false;
+function continueGame(): void {
+  audio.unlock();
+  const s = engine.getState();
+  if (s.v2?.ending || s.won) { playing = true; shell.render(s); shell.showEnding(s); return; }
+  if (!s.v2?.playerIdentity || s.phase === 'BOOT') { shell.showIntro(); return; }
+  beginPlay();
+}
+
+function freshEngine(): void {
+  demoToken++; demoRunning = false; clearTimeout(endTimer);
   try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
-  corrupt = false;
+  stale = false;
   engine = new SimEngine(SEED);
   (window as any).__et.engine = engine;
   subscribe();
-  scene?.resetEnding(); scene?.teleport(PLAYER_START.x, PLAYER_START.y);
-  prevDrift = 0;
-  audio.unlock();
-  begin();
-  if (demo) runDemo();
-  void fromEnding;
+  shell.clearCaptions(); shell.closeAll();
+  sceneAny()?.resetEnding?.(); sceneAny()?.syncToState?.(); 
+  prevDrift = 0; focusId = null; shell.setVerbs(null);
 }
 
-function runDemo(): void {
+function newGame(): void {
+  audio.unlock();
+  freshEngine();
+  shell.render(engine.getState());
+  shell.showFacts(() => shell.showIntro());
+}
+
+function restart(): void {
+  audio.unlock(); playing = false;
+  freshEngine();
+  shell.render(engine.getState());
+  shell.showIntro();
+}
+
+function chooseIdentity(i: Identity): void {
+  send({ type: 'SET_IDENTITY', identity: i });
+  sceneAny()?.setIdentity?.(i);
+  beginPlay();
+}
+
+// ---------- demo: watch planWin play legal commands, step by step ----------
+function planFrom(state: SimulationState): Command[] {
+  const w = planner.planWin as unknown as (e: unknown, o?: unknown) => Command[];
+  const restored = SimEngine.restore(SimEngine.serialize(state));
+  if (!restored) return [];
+  const clone = new SimEngine(SEED, restored);
+  try { return w(clone, {}) ?? []; } catch { return w(restored) ?? []; }
+}
+
+function startDemo(): void {
+  audio.unlock();
+  freshEngine();
+  send({ type: 'SET_IDENTITY', identity: 'amber' }); sceneAny()?.setIdentity?.('amber');
+  beginPlay();
   const token = ++demoToken; demoRunning = true;
-  shell.toast('DEMO PATH: watching a scripted winning route', 3000);
-  const cmds = cheapestWinPath();
-  let i = 0;
+  shell.caption('DEMO: watching a scripted winning route.', 'system', 3500);
+  let plan = planFrom(engine.getState() as SimulationState), i = 0, replans = 0;
   const step = () => {
     if (token !== demoToken) return;
-    if (i >= cmds.length) { demoRunning = false; return; }
-    let c = cmds[i++];
     const s = engine.getState();
-    if (c.type === 'RESOLVE_FORK' && s.pendingFork) c = { ...c, eventInstanceId: s.pendingFork.eventInstanceId };
-    let obj: string | null = null;
-    if (c.type === 'BEGIN_FORK') obj = TEMPLATES.find(t => t.id === c.templateId)?.triggerObjectId ?? null;
-    if (c.type === 'ACTIVATE_ANCHOR') obj = 'anchor_' + c.anchorId;
-    if (c.type === 'REST_AT_TERMINAL') obj = 'thread_terminal';
-    if (obj && OBJECT_POSITIONS[obj]) { const p = OBJECT_POSITIONS[obj]; scene.teleport(p.x - 10, p.y + 8); }
-    send(c);
-    window.setTimeout(step, c.type === 'RESOLVE_FORK' ? 1500 : 800);
+    if (s.won || s.v2.ending) { demoRunning = false; return; }
+    if (i >= plan.length) {
+      if (replans++ > 4) { demoRunning = false; return; }
+      plan = planFrom(s as SimulationState); i = 0; if (!plan.length) { demoRunning = false; return; }
+    }
+    const c = plan[i++];
+    const evs = send(c);
+    if (evs.some(e => e.type === 'REJECTED')) { plan = planFrom(engine.getState() as SimulationState); i = 0; replans++; }
+    window.setTimeout(step, c.type === 'INTERACT' ? 1100 : 220);
   };
-  window.setTimeout(step, 700);
+  window.setTimeout(step, 800);
 }
 
 // ---------- domain events -> UI/audio/scene ----------
@@ -176,25 +174,35 @@ function notify(s: Readonly<SimulationState>, events: DomainEvent[]): void {
   audio.setState(s.realityDrift, s.bondStrain);
   if (prevDrift < 60 && s.realityDrift >= 60) audio.playSfx('drift_warning');
   prevDrift = s.realityDrift;
-  let voiced = false;
+  const worldCaption = events.some(e => e.type === 'WORLD_CHANGED');
   for (const ev of events) {
     switch (ev.type) {
-      case 'VOICE': voiced = true; audio.playVoice(ev.cue); shell.setSubtitle(ev.text, s); break;
-      case 'PARTNER_ACTED': if (!events.some(e => e.type === 'VOICE')) shell.setSubtitle(ev.text, s); break;
+      case 'VOICE': audio.playVoice(ev.cue); shell.caption(ev.text, 'voice', 5000); break;
+      case 'WORLD_CHANGED': shell.caption(ev.text, 'world'); break;
+      case 'WARNING': shell.caption(ev.text, 'warning', 6000); break;
+      case 'PARTNER_TRACE': shell.caption(ev.text, 'trace'); break;
+      case 'REJECTED': shell.caption(ev.reason, 'warning', 4500); break;
       case 'FORK_RESOLVED': {
-        const r = ev.record; audio.playSfx(r.choice === 'ECHO' ? 'echo_send' : 'branch_split');
-        const t = tpl(r.templateId); const o = t?.outcomes.find(q => q.id === r.selectedOutcome);
-        shell.toast(`${(t?.label ?? r.templateId).toUpperCase()}: ${o?.text ?? ''}`, 5000);
+        const r = ev.record;
+        audio.playSfx(r.choice === 'ECHO' ? 'echo_send' : 'branch_split');
+        shell.bloom();
+        if (!worldCaption) {
+          const t = TEMPLATES.find(q => q.id === r.templateId); const o = t?.outcomes.find(q => q.id === r.selectedOutcome);
+          if (o) shell.caption(o.text, 'world');
+        }
         break;
       }
-      case 'ANCHOR_ALIGNED': audio.playSfx('anchor_lock'); scene?.showPartnerNear(ev.anchorId); shell.toast(`ANCHOR ALIGNED: ${ev.anchorId}`); break;
-      case 'RETRACED': audio.playSfx('branch_split'); shell.toast(`RETRACED TO ${ev.nodeId}. HISTORY KEPT.`); break;
-      case 'STRAIN_RECOVERED': shell.toast('THREAD STRAIN RELEASED'); break;
-      case 'REJECTED': shell.toast(ev.reason, 6000); break;
-      case 'WIN': audio.playSfx('final_merge'); scene?.playEnding(); window.setTimeout(() => shell.showEnding(), 6000); break;
+      case 'ANCHOR_ALIGNED': audio.playSfx('anchor_lock'); sceneAny()?.showPartnerNear?.(ev.anchorId); break;
+      case 'WIN': audio.playSfx('final_merge'); sceneAny()?.playEnding?.(); scheduleEnding(6000); break;
+      case 'FADE': scheduleEnding(3500); break;
     }
   }
-  void voiced;
+  if (playing && shell.screen === 'play' && (s.v2?.ending || s.won) && !endTimer) scheduleEnding(1500);
+}
+
+function scheduleEnding(ms: number): void {
+  clearTimeout(endTimer); demoRunning = false;
+  endTimer = window.setTimeout(() => { endTimer = 0; shell.setVerbs(null); shell.showEnding(engine.getState()); }, ms);
 }
 
 function subscribe(): void {
@@ -221,22 +229,23 @@ scene = new WorldScene({
   },
   canMove,
   reduce: () => prefs.reduce,
-  onFocus: (id) => { focusId = id; shell.setFocus(id ? (OBJECT_LABELS[id] ?? id) : null); },
-  onMoveEnd: (x, y) => { if (engine.getState().phase === 'EXPLORING') send({ type: 'SET_POSITION', x, y }); },
-});
+  dispatch: (c: Command) => send(c),
+  onFocus: (id: string | null) => {
+    focusId = id;
+    shell.setVerbs(id ? (isFork(id) ? 'fork' : 'use') : null, id ? (OBJECT_LABELS[id] ?? id) : '');
+  },
+  onMoveEnd: () => { /* V2: the scene dispatches MOVE per tile */ },
+} as any);
 game.scene.add('world', scene, true);
 
 function fitCanvas(): void {
   const vp = document.getElementById('viewport'); if (!vp) return;
   const w = vp.clientWidth, h = vp.clientHeight;
   if (!w || !h) return;
-  // largest INTEGER multiple of the 320x180 grid that fits; INK may go fractional when the integer leaves >12% slack
-  const kmax = Math.min(w / VIEW_W, h / VIEW_H);
-  let k = Math.floor(kmax);
-  if (k < 1) k = kmax;                                        // smaller than 1x available: shrink (all styles)
-  else if (ART_INK && 1 - k / kmax > 0.12) k = Math.floor(kmax * 100) / 100;
   const c = game.canvas; if (!c) return;
-  c.style.width = Math.floor(VIEW_W * k) + 'px'; c.style.height = Math.floor(VIEW_H * k) + 'px';
+  const cw = (game.config.width as number), ch = (game.config.height as number);
+  const k = Math.min(w / cw, h / ch);
+  c.style.width = Math.floor(cw * k) + 'px'; c.style.height = Math.floor(ch * k) + 'px';
 }
 new ResizeObserver(fitCanvas).observe(document.getElementById('viewport')!);
 window.addEventListener('resize', fitCanvas); window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 100));
@@ -244,47 +253,48 @@ game.events.once('ready', fitCanvas); setTimeout(fitCanvas, 50); setTimeout(fitC
 
 // ---------- keyboard ----------
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
-const inOverlay = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.('.overlay,.fork,.archive');
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  const s = engine.getState();
-  const overlayUp = shell.startOpen() || shell.helpOpen() || s.phase === 'FORK';
   if (k === 'escape') {
     if (shell.helpOpen()) shell.help(false);
-    else if (s.phase === 'FORK') send({ type: 'CANCEL_FORK' });
-    else if (s.phase === 'ARCHIVE') toggleArchive(false);
+    else if (shell.aboutOpen()) shell.about(false);
+    else if (shell.screen === 'facts') shell.skipFacts();
     return;
   }
-  if (shell.startOpen()) return;
-  if (k === '?' || k === 'h') { shell.help(!shell.helpOpen()); return; }
-  if (MOVE_KEYS.has(k)) { keys.add(k); if (!inOverlay(e.target)) e.preventDefault(); return; }
-  if (overlayUp) return;
-  if (k === 'e' || k === ' ') { if (k === ' ' && inOverlay(e.target)) return; e.preventDefault(); act(); }
-  else if (k === 'tab' || k === 'm') { e.preventDefault(); toggleArchive(s.phase !== 'ARCHIVE'); }
-  else if (k === 'c') { send({ type: 'REQUEST_PARTNER', intention: s.intention }); }
-  else if (k === 'r') { retraceSelected(); }
+  if (shell.screen === 'play' && !shell.helpOpen()) {
+    if (MOVE_KEYS.has(k)) { keys.add(k); e.preventDefault(); return; }
+    if (k === 'e') { e.preventDefault(); interact(isFork(focusId) ? 'SELF' : 'USE'); return; }
+    if (k === ' ') { e.preventDefault(); interact(isFork(focusId) ? 'LET_GO' : 'USE'); return; }
+    if (k === 'q') { interact('ECHO'); return; }
+    if (k === 'f') { interact('LET_GO'); return; }
+  }
+  if (k === 'l') { shell.replay(); return; }
+  if (k === '?' || k === 'h') { if (shell.screen === 'play') shell.help(!shell.helpOpen()); }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => { keys.clear(); touchDir = { x: 0, y: 0 }; });
 document.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest('button');
-  if (b && !b.closest('.overlay,.fork,.archive')) b.blur();
+  if (b && shell.screen === 'play') b.blur();
 });
 
 // ---------- boot ----------
-(window as any).__et = { engine };
+(window as any).__et = {
+  engine, shell,
+  state: () => engine.getState(),
+  send, scene: () => scene, focus: () => focusId, demoRunning: () => demoRunning,
+  planWin: () => planFrom(engine.getState() as SimulationState),
+};
 if (new URLSearchParams(location.search).get('debug') === '1') {
-  // test helper (only with ?debug=1): force meters for CSS band checks; the next dispatch recomputes them
   (window as any).__et.debug = {
     setMeters: (drift: number, strain: number) => {
       const st = engine.getState() as SimulationState; st.realityDrift = drift; st.bondStrain = strain; notify(st, []);
     },
+    pos: () => sceneAny().pos?.(), teleport: (x: number, y: number) => sceneAny().teleport?.(x, y),
     texDataUrl: (key: string) => (game.textures.get(key).getSourceImage() as HTMLCanvasElement).toDataURL('image/png'),
-    portraitUrl: (who: string, expr: string) => import('./game/ink').then(m => m.portrait(who as 'player', expr as 'calm').toDataURL('image/png')),
-    shell, pos: () => scene.pos(), blocked: isBlockedPx, pxFocus: () => focusId, teleport: (x: number, y: number) => scene.teleport(x, y), showEnding: () => shell.showEnding(),
   };
 }
 subscribe();
 shell.render(engine.getState());
-shell.showStart(true, { hasSave: !!saved && !corrupt && engine.getState().turn > 0, corrupt });
+shell.showTitle({ hasSave: hasSave(), stale });
