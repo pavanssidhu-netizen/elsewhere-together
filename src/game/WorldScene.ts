@@ -280,7 +280,7 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------- per-frame ----------
   update(time: number, delta: number): void {
-    const dt = Math.min(delta, 50) / 1000;
+    const dt = Math.min(delta, 100) / 1000;
     const s = this.hooks.getState();
     const dir = this.hooks.canMove() && this.endingStart < 0 ? this.hooks.getDir() : { x: 0, y: 0 };
     const wasMoving = this.moving;
