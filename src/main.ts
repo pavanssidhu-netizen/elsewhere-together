@@ -4,6 +4,7 @@ import { SimEngine, TEMPLATES, cheapestWinPath } from './sim/engine';
 import type { Command, DomainEvent, SimulationState, Intention, Choice } from './sim/types';
 import { AudioEngine } from './audio/audioEngine';
 import { WorldScene } from './game/WorldScene';
+import { ART_INK, INK_SCALE, toggleArtStyle } from './game/artStyle';
 import { OBJECT_POSITIONS, OBJECT_LABELS, PLAYER_START, VIEW_W, VIEW_H, isBlockedPx } from './game/layout';
 import { Shell } from './ui/shell';
 import { ancestors, tpl } from './ui/panels';
@@ -203,8 +204,8 @@ function subscribe(): void {
 
 // ---------- phaser ----------
 const game = new Phaser.Game({
-  type: Phaser.AUTO, parent: shell.viewport, width: VIEW_W, height: VIEW_H,
-  backgroundColor: '#111626', pixelArt: true, antialias: false, roundPixels: true,
+  type: Phaser.AUTO, parent: shell.viewport, width: VIEW_W * (ART_INK ? INK_SCALE : 1), height: VIEW_H * (ART_INK ? INK_SCALE : 1),
+  backgroundColor: '#111626', pixelArt: !ART_INK, antialias: ART_INK, roundPixels: !ART_INK,
   scale: { mode: Phaser.Scale.NONE },
   input: { keyboard: false, mouse: false, touch: false, gamepad: false },
   audio: { noAudio: true },
@@ -276,6 +277,8 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
     setMeters: (drift: number, strain: number) => {
       const st = engine.getState() as SimulationState; st.realityDrift = drift; st.bondStrain = strain; notify(st, []);
     },
+    texDataUrl: (key: string) => (game.textures.get(key).getSourceImage() as HTMLCanvasElement).toDataURL('image/png'),
+    portraitUrl: (who: string, expr: string) => import('./game/ink').then(m => m.portrait(who as 'player', expr as 'calm').toDataURL('image/png')),
     shell, pos: () => scene.pos(), blocked: isBlockedPx, pxFocus: () => focusId, teleport: (x: number, y: number) => scene.teleport(x, y), showEnding: () => shell.showEnding(),
   };
 }

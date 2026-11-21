@@ -2,6 +2,8 @@ import type { SimulationState, Intention } from '../sim/types';
 import { $, esc } from './dom';
 import { renderFork, renderArchive, tpl, type PanelHandlers } from './panels';
 import { applyMeta, band, signalQuality } from './metaEffects';
+import { ART_INK, toggleArtStyle } from '../game/artStyle';
+import { portrait, type Expr } from '../game/ink';
 
 export interface Handlers extends PanelHandlers {
   act(): void; call(): void; openArchive(): void; retraceSelected(): void;
@@ -24,6 +26,7 @@ export class Shell {
   private subTimer = 0;
   private toastTimer = 0;
   private lastLogKey = '';
+  private lastExpr = '';
   private lastState: Readonly<SimulationState> | null = null;
   reduce = false;
   muted = false;
@@ -33,7 +36,7 @@ export class Shell {
     host.innerHTML = TEMPLATE;
     this.root = $(host, '#os');
     const on = (sel: string, fn: () => void) => { const b = $(this.root, sel); b.onclick = () => fn(); return b; };
-    on('#b-mute', () => h.toggleMute()); on('#b-reduce', () => h.toggleReduce()); on('#b-help', () => this.help(true));
+    on('#b-mute', () => h.toggleMute()); on('#b-reduce', () => h.toggleReduce()); on('#b-help', () => this.help(true)); on('#b-style', () => toggleArtStyle());
     on('#help-close', () => this.help(false));
     on('#btn-act', () => h.act()); on('#btn-map', () => h.openArchive()); on('#btn-retrace', () => h.retraceSelected());
     on('#btn-call', () => h.call()); on('#btn-call2', () => h.call());
@@ -102,6 +105,7 @@ export class Shell {
     applyMeta(this.root, s.realityDrift, s.bondStrain, this.reduce);
     $(this.root, '#b-mute').textContent = this.muted ? 'MUSIC OFF' : 'MUSIC ON';
     $(this.root, '#b-reduce').textContent = this.reduce ? 'DISTORTION: LOW' : 'DISTORTION: FULL';
+    $(this.root, '#b-style').textContent = ART_INK ? 'STYLE: INK' : 'STYLE: PIXEL';
     $(this.root, '#b-mute').setAttribute('aria-pressed', String(this.muted));
     $(this.root, '#b-reduce').setAttribute('aria-pressed', String(this.reduce));
     $(this.root, '#branch').textContent = s.player.nodeId === 'root' ? '000' : s.player.nodeId.replace(/^N/, '');
@@ -134,6 +138,7 @@ export class Shell {
     const key = html; if (key !== this.lastLogKey) { $(this.root, '#log').innerHTML = html; this.lastLogKey = key; }
     if (this.subText.startsWith('CONNECTING') ) { const lp = [...s.log].reverse().find(l => l.kind === 'partner'); if (lp && s.turn > 0) this.subText = lp.text; }
     this.renderSub(s);
+    this.renderPortraits(s);
     // overlays
     renderFork($(this.root, '#fork'), s, this.h);
     if (!s.nodes[this.selected]) this.selected = s.player.nodeId;
@@ -150,6 +155,22 @@ export class Shell {
     $(this.root, '#e-stats').textContent = `TURNS ${s.turn} · BRANCHES ${Object.keys(s.nodes).length} · DRIFT ${Math.round(d)} · STRAIN ${Math.round(st)} · RETRACES ${s.retraceCount}`;
   }
 
+  /** INK style only: hand-inked busts. Partner expression follows signal quality and strain. */
+  private renderPortraits(s: Readonly<SimulationState>): void {
+    if (!ART_INK) return;
+    const q = signalQuality(s.nodes[s.player.nodeId]?.world.signal ?? 2, s.bondStrain);
+    const expr: Expr = q === 'broken' ? 'faint' : q === 'faint' || s.bondStrain >= 30 ? 'strained' : 'calm';
+    if (expr === this.lastExpr) return;
+    this.lastExpr = expr;
+    const paint = (id: string, src: HTMLCanvasElement) => {
+      const cv = $(this.root, id) as HTMLCanvasElement, c = cv.getContext('2d')!;
+      c.clearRect(0, 0, cv.width, cv.height); c.drawImage(src, 0, 0);
+    };
+    paint('#ptn-portrait', portrait('partner', expr));
+    paint('#pl-portrait', portrait('player', s.bondStrain >= 60 ? 'strained' : 'calm'));
+    $(this.root, '#ptn-portrait').dataset.expr = expr;
+  }
+
   showEnding(): void { $(this.root, '#ending').classList.add('open'); }
 
   setTab(t: 'world' | 'archive' | 'link'): void {
@@ -161,9 +182,13 @@ export class Shell {
 }
 
 const TEMPLATE = `
+<svg class="ink-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <filter id="ink-rough" x="-3%" y="-3%" width="106%" height="106%"><feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G"/></filter>
+</defs></svg>
 <div id="os" class="os" data-tab="world">
   <header class="titlebar">
     <span class="logo">ECHO/OS</span><span class="sess">// SESSION 07</span><span class="spacer"></span>
+    <button id="b-style" title="Switch art style (reloads)">STYLE: PIXEL</button>
     <button id="b-mute" aria-pressed="false">MUSIC ON</button>
     <button id="b-reduce" aria-pressed="false">DISTORTION: FULL</button>
     <button id="b-help">HELP</button>
@@ -196,7 +221,7 @@ const TEMPLATE = `
     <section class="col-link">
       <div class="panel comms">
         <div class="panel-h"><span>THREAD_LINK / PARTNER: CYAN</span><span id="sig" class="sig">SIGNAL: readable</span></div>
-        <div class="sub" id="sub">"..."</div>
+        <div class="talk"><canvas id="ptn-portrait" class="portrait" width="320" height="320" role="img" aria-label="Partner portrait"></canvas><div class="sub" id="sub">"..."</div></div>
         <div class="conflict" id="conflict"></div>
         <div class="btns">
           <button id="btn-call">CALL <kbd>C</kbd></button>
@@ -214,6 +239,7 @@ const TEMPLATE = `
     </section>
   </main>
   <footer class="status">
+    <canvas id="pl-portrait" class="portrait-sm" width="320" height="320" role="img" aria-label="Your portrait"></canvas>
     <div class="meter" id="m-drift"><span id="t-drift">DRIFT 0</span><div class="bar"><i></i></div></div>
     <div class="meter strain" id="m-strain"><span id="t-strain">STRAIN 0</span><div class="bar"><i></i></div></div>
     <div class="anchors" id="anchors"></div>

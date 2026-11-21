@@ -29,6 +29,8 @@
  *                 cyan #7be0df, violet #a89bdb, coral #e47f7c.
  */
 import Phaser from 'phaser';
+import { ART_INK, INK_SCALE } from './artStyle';
+import { inkFrame, strSeed, inkStats } from './ink';
 
 export const PAL = {
   navy: '#111626', deep: '#1b263b', teal: '#4c8790', mist: '#b2c4ce',
@@ -38,6 +40,11 @@ export const PAL = {
 const TILE_SIZE = 16;
 const CHAR_W = 12;
 const CHAR_H = 16;
+
+/** Display scale for sprites/tiles: 1 in PIXEL style, 1/INK_SCALE in INK style (ink textures are INK_SCALE x bigger). */
+export const SPRITE_SCALE = ART_INK ? 1 / INK_SCALE : 1;
+/** INK only: number of extra ground variants (frames `ground#1..`, `ground_dark#1..`) to break up tiling. */
+export const GROUND_VARIANTS = 4;
 
 export const TEX = { tiles: 'et_tiles', chars: 'et_chars', fx: 'et_fx' } as const;
 
@@ -97,9 +104,9 @@ function speckle(c: Ctx, ox: number, oy: number, cols: string[], n: number, seed
 
 // ───────────────────────────── tiles ─────────────────────────────
 
-function drawGround(c: Ctx, x: number, y: number, dark: boolean): void {
+function drawGround(c: Ctx, x: number, y: number, dark: boolean, variant = 0): void {
   rect(c, x, y, 16, 16, dark ? '#16202f' : '#1b263b');
-  speckle(c, x, y, dark ? ['#111626', '#1b263b'] : ['#223149', '#4c8790', '#16202f'], 14, dark ? 7 : 3);
+  speckle(c, x, y, dark ? ['#111626', '#1b263b'] : ['#223149', '#4c8790', '#16202f'], 14, (dark ? 7 : 3) + variant * 17);
 }
 
 function drawGlow(c: Ctx, cx: number, cy: number, r: number, col: string, a: number): void {
@@ -124,6 +131,8 @@ function drawTile(c: Ctx, name: string, x: number, y: number): void {
       break;
     case 'ground': drawGround(c, x, y, false); break;
     case 'ground_dark': drawGround(c, x, y, true); break;
+    case 'ground#1': case 'ground#2': case 'ground#3': drawGround(c, x, y, false, +name.slice(7)); break;
+    case 'ground_dark#1': case 'ground_dark#2': case 'ground_dark#3': drawGround(c, x, y, true, +name.slice(12)); break;
     case 'water':
       rect(c, x, y, 16, 16, '#183049');
       for (let i = 0; i < 4; i++) {
@@ -300,26 +309,59 @@ function addFrames(tex: Phaser.Textures.CanvasTexture, frames: [string, number, 
   for (const [n, x, y, w, h] of frames) if (!tex.has(n)) tex.add(n, 0, x, y, w, h);
 }
 
+type FrameDef = [string, number, number, number, number];
+
+/**
+ * Create a canvas texture `key` of size w x h from `draw` (which paints the PIXEL art and returns frame rects).
+ * PIXEL style: the pixel art is used as is (NEAREST). INK style: every frame is re-rendered by the ink post-process
+ * at INK_SCALE x, with the SAME key and frame names (frame rects scaled), LINEAR filtered.
+ */
+function makeSheet(tm: Phaser.Textures.TextureManager, key: string, w: number, h: number, draw: (c: Ctx) => FrameDef[], stat: 'tilesMs' | 'charsMs' | 'fxMs', smooth = false): void {
+  if (!ART_INK) {
+    const t = tm.createCanvas(key, w, h); if (!t) return;
+    addFrames(t, draw(t.getContext()));
+    t.refresh(); t.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    return;
+  }
+  const t0 = performance.now();
+  const src = document.createElement('canvas'); src.width = w; src.height = h;
+  const sc = src.getContext('2d')!;
+  const frames = draw(sc);
+  const S = INK_SCALE;
+  const t = tm.createCanvas(key, w * S, h * S); if (!t) return;
+  const c = t.getContext();
+  if (smooth) { // fx: soft sprites are just smoothly upscaled
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(src, 0, 0, w * S, h * S);
+  } else {
+    for (const [n, x, y, fw, fh] of frames) {
+      c.putImageData(inkFrame(sc.getImageData(x, y, fw, fh), n, S, strSeed(key + n)), x * S, y * S);
+      inkStats.frames++;
+    }
+  }
+  addFrames(t, frames.map(([n, x, y, fw, fh]) => [n, x * S, y * S, fw * S, fh * S] as FrameDef));
+  t.refresh(); t.setFilter(Phaser.Textures.FilterMode.LINEAR);
+  inkStats[stat] += performance.now() - t0;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   const tm = scene.textures;
 
   if (!tm.exists(TEX.tiles)) {
     const cols = 8;
-    const rows = Math.ceil(TILE_ORDER.length / cols);
-    const t = tm.createCanvas(TEX.tiles, cols * TILE_SIZE, rows * TILE_SIZE);
-    if (t) {
-      const c = t.getContext();
-      const frames: [string, number, number, number, number][] = [];
-      TILE_ORDER.forEach((name, idx) => {
+    const order: string[] = [...TILE_ORDER];
+    if (ART_INK) for (let v = 1; v < GROUND_VARIANTS; v++) order.push(`ground#${v}`, `ground_dark#${v}`);
+    const rows = Math.ceil(order.length / cols);
+    makeSheet(tm, TEX.tiles, cols * TILE_SIZE, rows * TILE_SIZE, (c) => {
+      const frames: FrameDef[] = [];
+      order.forEach((name, idx) => {
         const x = (idx % cols) * TILE_SIZE;
         const y = Math.floor(idx / cols) * TILE_SIZE;
         drawTile(c, name, x, y);
         frames.push([name, x, y, TILE_SIZE, TILE_SIZE]);
       });
-      addFrames(t, frames);
-      t.refresh();
-      t.setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
+      return frames;
+    }, 'tilesMs');
   }
 
   if (!tm.exists(TEX.chars)) {
@@ -328,20 +370,16 @@ export function registerTextures(scene: Phaser.Scene): void {
     // layout: one row per (who, dir, anim); 4 columns
     const rowsList: { who: Who; dir: Dir; anim: Anim; n: number }[] = [];
     for (const who of whos) for (const dir of dirs) { rowsList.push({ who, dir, anim: 'idle', n: 2 }); rowsList.push({ who, dir, anim: 'walk', n: 4 }); }
-    const t = tm.createCanvas(TEX.chars, CHAR_W * 4, CHAR_H * rowsList.length);
-    if (t) {
-      const c = t.getContext();
-      const frames: [string, number, number, number, number][] = [];
+    makeSheet(tm, TEX.chars, CHAR_W * 4, CHAR_H * rowsList.length, (c) => {
+      const frames: FrameDef[] = [];
       rowsList.forEach((r, ri) => {
         for (let i = 0; i < r.n; i++) {
           drawChar(c, i * CHAR_W, ri * CHAR_H, r.who, r.dir, r.anim, i);
           frames.push([charFrame(r.who, r.dir, r.anim, i), i * CHAR_W, ri * CHAR_H, CHAR_W, CHAR_H]);
         }
       });
-      addFrames(t, frames);
-      t.refresh();
-      t.setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
+      return frames;
+    }, 'charsMs');
     // animations
     for (const who of whos) for (const dir of dirs) {
       const idleKey = animKey(who, 'idle', dir);
@@ -358,9 +396,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   }
 
   if (!tm.exists(TEX.fx)) {
-    const t = tm.createCanvas(TEX.fx, 40, 16);
-    if (t) {
-      const c = t.getContext();
+    makeSheet(tm, TEX.fx, 40, 16, (c) => {
       // rain streak at (0,0) 2x6
       rect(c, 1, 0, 1, 3, PAL.mist); rect(c, 0, 3, 1, 3, PAL.teal);
       // spark at (4,0) 3x3 plus shape
@@ -370,9 +406,8 @@ export function registerTextures(scene: Phaser.Scene): void {
       c.beginPath(); c.arc(16, 8, 6.5, 0, Math.PI * 2); c.stroke();
       // glow at (24,0)
       drawGlow(c, 32, 8, 8, PAL.mist, 0.5);
-      addFrames(t, [[FX.rain, 0, 0, 2, 6], [FX.spark, 4, 0, 3, 3], [FX.ring, 8, 0, 16, 16], [FX.glow, 24, 0, 16, 16]]);
-      t.refresh();
-      t.setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
+      return [[FX.rain, 0, 0, 2, 6], [FX.spark, 4, 0, 3, 3], [FX.ring, 8, 0, 16, 16], [FX.glow, 24, 0, 16, 16]];
+    }, 'fxMs', true);
   }
+  if (ART_INK) console.info(`[ink] textures: tiles ${inkStats.tilesMs.toFixed(0)}ms, chars ${inkStats.charsMs.toFixed(0)}ms, fx ${inkStats.fxMs.toFixed(0)}ms (${inkStats.frames} frames @${INK_SCALE}x)`);
 }

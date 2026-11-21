@@ -6,8 +6,11 @@ import fs from 'node:fs';
 
 const PW = process.env.PLAYWRIGHT_PATH || '/home/pavsidh/.npm/_npx/e41f203b7505f1fb/node_modules/playwright';
 const { chromium } = createRequire(import.meta.url)(PW);
-const PORT = 5199, APP = `http://localhost:${PORT}/?debug=1`;
-const SHOTS = new URL('../docs/shots/', import.meta.url).pathname;
+// STYLE=ink|pixel (default pixel) selects the art style; SHOTS_DIR overrides where screenshots go
+// (default docs/shots/ for pixel, docs/shots/ink/ for ink).
+const STYLE = process.env.STYLE === 'ink' ? 'ink' : 'pixel';
+const PORT = 5199, APP = `http://localhost:${PORT}/?debug=1&style=${STYLE}`;
+const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL(STYLE === 'ink' ? '../docs/shots/ink/' : '../docs/shots/', import.meta.url).pathname;
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const srv = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { cwd: new URL('..', import.meta.url).pathname, stdio: 'ignore' });

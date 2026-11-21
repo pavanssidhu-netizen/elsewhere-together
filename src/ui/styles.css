@@ -157,3 +157,25 @@ button.mini { min-height:24px; padding:1px 6px; font-size:11px; }
   .outcomes, .choices { grid-template-columns:1fr; } .ch { min-height:60px; }
   .btns button { min-height:44px; }
 }
+
+/* ───────── INK style (html.style-ink). Decorative only: borders/backgrounds, never text, buttons or layout boxes ───────── */
+.ink-defs { position:absolute; width:0; height:0; overflow:hidden; }
+.portrait, .portrait-sm { display:none; }
+.style-ink #game canvas { image-rendering:auto; }
+.style-ink .viewport { background:#b2c4ce; }
+.style-ink .talk { display:flex; align-items:center; gap:4px; padding-right:6px; }
+.style-ink .talk .sub { flex:1; min-width:0; padding-left:2px; }
+.style-ink .portrait { display:block; width:132px; height:132px; flex:none; margin:4px 0 0 6px; transition:opacity .6s; }
+.style-ink .portrait[data-expr=faint] { opacity:.7; }
+.style-ink .portrait-sm { display:block; width:44px; height:44px; flex:none; margin:-8px 0; }
+/* paper grain (SVG turbulence as a static background) + ink-brush borders (the border lives on a ::after so only it is displaced) */
+.style-ink .panel, .style-ink .card, .style-ink .status, .style-ink .titlebar {
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 .7  0 0 0 0 .77  0 0 0 0 .81  0 0 0 .09 0'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>");
+}
+.style-ink .panel { border-color:transparent; }
+.style-ink .panel::after { content:""; position:absolute; inset:-2px; border:2.5px solid #b2c4ce; opacity:.85; pointer-events:none; filter:url(#ink-rough); border-radius:3px 7px 4px 6px / 6px 3px 7px 4px; }
+.style-ink .panel::before { border-color:#b2c4ce; border-width:1px; }
+.style-ink .titlebar { border-bottom-color:transparent; box-shadow:0 2px 0 #4c8790; }
+.style-ink .status { border-top-color:transparent; box-shadow:0 -2px 0 #4c8790; }
+.style-ink .card { border-radius:4px 10px 5px 9px / 9px 4px 10px 5px; }
+.style-ink .viewport::after { content:""; position:absolute; inset:0; border:3px solid #111626; pointer-events:none; filter:url(#ink-rough); }
