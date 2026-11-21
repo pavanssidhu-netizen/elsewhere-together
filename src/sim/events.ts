@@ -1,5 +1,6 @@
 import type { Delta, EventOutcome, EventTemplate, SimulationState, Stats, WorldStat } from './types';
 import { eventRoll } from './rng';
+import { TUNING } from './tuning';
 
 export const WORLD_STATS: WorldStat[] = ['light', 'water', 'structure', 'signal', 'growth'];
 
@@ -109,8 +110,9 @@ export function adaptOutcome(t: EventTemplate, id: 'A' | 'B', w: Stats): EventOu
 export function outcomeFor(t: EventTemplate, id: 'A' | 'B', w: Stats): EventOutcome { return adaptOutcome(t, id, w); }
 
 /** Deterministic default (LET GO) outcome for a world, template and occurrence index. */
-export function defaultOutcomeFor(seed: number, nodeId: string, t: EventTemplate, w: Stats, occurrence: number): 'A' | 'B' {
-  return eventRoll(seed, nodeId, t.id, occurrence) < weightA(t.id, w) ? 'A' : 'B';
+export function defaultOutcomeFor(seed: number, nodeId: string, t: EventTemplate, w: Stats, occurrence: number, prepared = false): 'A' | 'B' {
+  const p = Math.min(0.9, weightA(t.id, w) + (prepared ? TUNING.PREP_BONUS : 0));
+  return eventRoll(seed, nodeId, t.id, occurrence) < p ? 'A' : 'B';
 }
 
 export function previewFork(state: Readonly<SimulationState>, templateId: string):

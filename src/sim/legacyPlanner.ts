@@ -1,6 +1,6 @@
 // Deterministic scripted player used for cheapestWinPath(), tests and the demo-seed button.
 import type { Command, SimulationState } from './types';
-import type { SimEngine } from './engine';
+
 import { TEMPLATES } from './events';
 import { ANCHOR_ORDER, ANCHOR_REQS, checkAnchor, playerMeets, type Req } from './anchors';
 
@@ -44,7 +44,7 @@ export function nextCommand(s: Readonly<SimulationState>, opts: PlanOpts): Comma
   return s.bondStrain > 0 ? { type: 'REST_AT_TERMINAL' } : { type: 'ADVANCE_PARTNER' };
 }
 
-export function planWin(engine: SimEngine, opts: PlanOpts = {}): Command[] {
+export function planWin(engine: { getState(): Readonly<SimulationState>; dispatch(c: Command): unknown }, opts: PlanOpts = {}): Command[] {
   const cmds: Command[] = [];
   for (let i = 0; i < (opts.maxSteps ?? 200); i++) {
     const c = nextCommand(engine.getState(), opts);

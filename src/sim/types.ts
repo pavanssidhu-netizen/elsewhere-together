@@ -117,6 +117,8 @@ export interface V2State {
   realm: 'TOWN' | 'ALIEN';      // alien overgrown variant (easter egg)
   ending: Ending | null;
   gridX: number; gridY: number; // player tile in topology (authoritative for INTERACT range)
+  calm?: number;                // ADDED: temporary drift relief from the echo stones (decays slowly)
+  partnerDrag?: Delta;          // ADDED: pending cost of the player's SELF picks, applied to the partner's next event
 }
 
 export type Command =

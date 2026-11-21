@@ -1,3 +1,4 @@
+import { TUNING } from './tuning';
 import type { BranchNode, SimulationState, WorldStat } from './types';
 
 type Nodes = Record<string, BranchNode>;
@@ -27,11 +28,11 @@ export function stateDifference(nodes: Nodes, a: string, b: string): number {
   return STATS.reduce((s, k) => s + Math.abs(nodes[a].world[k] - nodes[b].world[k]), 0);
 }
 
-export function calculateDrift(s: Pick<SimulationState, 'nodes' | 'player' | 'partner' | 'anchors'>): number {
+export function calculateDrift(s: Pick<SimulationState, 'nodes' | 'player' | 'partner' | 'anchors'> & { v2?: { calm?: number } }): number {
   const aligned = s.anchors.filter(a => a.aligned).length;
-  const d = 8 * lineageDistance(s.nodes, s.player.nodeId, s.partner.nodeId)
-    + 3 * stateDifference(s.nodes, s.player.nodeId, s.partner.nodeId)
-    - 12 * aligned;
+  const d = TUNING.DRIFT_LINEAGE * lineageDistance(s.nodes, s.player.nodeId, s.partner.nodeId)
+    + TUNING.DRIFT_STATE * stateDifference(s.nodes, s.player.nodeId, s.partner.nodeId)
+    - TUNING.DRIFT_ANCHOR * aligned - (s.v2?.calm ?? 0);
   return Math.max(0, Math.min(100, d));
 }
 
@@ -58,3 +59,6 @@ export function retraceTargets(nodes: Nodes, nodeId: string): string[] {
 export function isValidRetrace(nodes: Nodes, from: string, target: string): boolean {
   return !!nodes[target] && retraceTargets(nodes, from).includes(target);
 }
+
+/** Is `id` on the root..target path (ancestor or self)? */
+export function isOnPath(nodes: Nodes, id: string, target: string): boolean { return pathTo(nodes, target).includes(id); }

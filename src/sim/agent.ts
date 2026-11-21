@@ -2,16 +2,16 @@
 import type { DomainEvent, EventTemplate, Goal, Intention, SimulationState } from './types';
 import { TEMPLATES, defaultOutcomeFor, deltaText } from './events';
 import { mulberry32, hash32 } from './rng';
-import { stepToward } from './branches';
+import { isOnPath } from './branches';
+import { TUNING } from './tuning';
 import { ANCHOR_ORDER, ANCHOR_REQS, eligibleAnchor, playerMeets, unmetPartnerReqs, type Req } from './anchors';
-import { PARTNER_EVENT_NODE_CAP, addLog, applyEvent, clamp100, pendingEchoes, recompute, voice } from './core';
+import { ECHO_QUEUE_CAP, PARTNER_EVENT_NODE_CAP, addLog, addStep, applyEvent, clamp100, pendingEchoes, recompute, voice } from './core';
 import { VOICE_LINES } from '../content/dialogue';
 
 const INTENTION_GOAL: Record<Intention, Goal> = { FIND_ME: 'SEEK', STAY_SAFE: 'STABILISE', HELP_MY_WORLD: 'ASSIST' };
 const BASE_BIAS = 10;      // standing intention bias
 const REQUEST_BIAS = 20;   // bias right after an explicit request
 const ECHO_BONUS = 15;     // assist bonus when a pending echo has a relevant target
-const ASSIST_STRAIN = 3;   // un-funded assist costs the partner something
 
 function helps(t: EventTemplate, r: Req): boolean {
   const o = t.outcomes[t.selfPreferredOutcome === 'A' ? 0 : 1];
@@ -22,7 +22,7 @@ function helps(t: EventTemplate, r: Req): boolean {
 
 /** Template the partner could use to improve its own world toward an unmet anchor requirement. */
 export function pickAssistTemplate(s: SimulationState): EventTemplate | null {
-  if (Object.keys(s.nodes).length >= PARTNER_EVENT_NODE_CAP) return null;
+  if (Object.values(s.nodes).filter(n => n.owner === 'partner').length >= PARTNER_EVENT_NODE_CAP) return null;
   const reqs = unmetPartnerReqs(s);
   const credits = pendingEchoes(s);
   const useful = (t: EventTemplate) => reqs.some(r => helps(t, r));
@@ -47,16 +47,25 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], requested?: 
   const assistT = pickAssistTemplate(s);
   const eligible = eligibleAnchor(s);
   const fundedAssist = !!assistT && pendingEchoes(s).some(c => c.kind === assistT.echoKind);
+  // A full queue of echoes the partner cannot use would block all further giving: they let the oldest go.
+  const staleOne = pendingEchoes(s).find(c => s.turn - c.createdTurn >= 3);
+  if (!fundedAssist && pendingEchoes(s).length >= ECHO_QUEUE_CAP && staleOne) {
+    const stale = staleOne;
+    stale.consumed = true;
+    addLog(s, `Partner has no use for your ${stale.kind} echo right now. It settles quietly and makes room.`, 'partner');
+  }
 
   const scores: Array<[Goal, number]> = [];
   scores.push(['STABILISE', 25 + 0.75 * s.bondStrain + hazard + bias('STABILISE') + noise()]);
-  if (s.partner.nodeId !== s.player.nodeId) {
+  // The partner never walks into the player's lineage: it can only climb its OWN ancestors back toward a shared one.
+  const canSeek = !isOnPath(s.nodes, s.partner.nodeId, s.player.nodeId) && s.nodes[s.partner.nodeId].parentId !== null;
+  if (canSeek) {
     scores.push(['SEEK', 45 + 0.45 * s.realityDrift - 0.2 * s.bondStrain + bias('SEEK') + noise()]);
   }
   if (assistT) {
     scores.push(['ASSIST', 20 + 0.25 * s.realityDrift + (playerBlocked ? 25 : 0) + (fundedAssist ? ECHO_BONUS : 0) + bias('ASSIST') + noise()]);
   }
-  if (eligible) scores.push(['ANCHOR', 25 + 45 + noise()]);
+  if (eligible) scores.push(['ANCHOR', 110 + noise()]);
 
   let goal: Goal = scores.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
   let refused = false;
@@ -67,10 +76,12 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], requested?: 
 
   let text = '';
   if (goal === 'SEEK') {
-    const to = stepToward(s.nodes, s.partner.nodeId, s.player.nodeId);
+    const from = s.partner.nodeId;
+    const to = s.nodes[from].parentId!;
     s.partner.nodeId = to;
     s.nodes[to].visitState = 'VISITED';
-    text = `Partner follows the strongest trace toward you (now at ${to}).`;
+    text = `Partner climbs back along their own path toward a place you once shared (now at ${to}).`;
+    addStep(s, { actor: 'partner', fromNodeId: from, toNodeId: to, action: 'SEEK', cause: 'Drift pulled them back along their own lineage.', effect: 'The distance between your worlds shrinks; their last choice is left behind.' });
     voice(s, out, 'find', VOICE_LINES.find, 8);
   } else if (goal === 'ASSIST' && assistT) {
     const credit = pendingEchoes(s).find(c => c.kind === assistT.echoKind);
@@ -78,26 +89,32 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], requested?: 
     const roll = defaultOutcomeFor(s.seed, s.partner.nodeId, assistT, partnerNode.world, occ);
     const selected = credit ? assistT.selfPreferredOutcome : roll;
     if (credit) credit.consumed = true;
-    else s.bondStrain = clamp100(s.bondStrain + ASSIST_STRAIN);
+    else s.bondStrain = clamp100(s.bondStrain + TUNING.ASSIST_STRAIN);
     const rec = applyEvent(s, 'partner', assistT.id, 'LET_GO', selected, {
       reason: credit
         ? `Partner reached for the ${assistT.label} and spent your ${credit.kind} echo to take the better outcome.`
         : `Partner reached for the ${assistT.label}; chance decided.`,
-      paid: credit ? `Your echo ${credit.id} was spent. Partner paid nothing.` : `Partner paid ${ASSIST_STRAIN} strain on the Thread.`,
+      paid: credit ? `Your echo ${credit.id} was spent. Partner paid nothing.` : `Partner paid ${TUNING.ASSIST_STRAIN} strain on the Thread.`,
       echoId: credit?.id,
     });
     text = `Partner works the ${assistT.label}: ${deltaText(rec.effects)}${credit ? ' (echo spent)' : ''}.`;
+    out.push({ type: 'PARTNER_TRACE', objectId: assistT.triggerObjectId, text: credit
+      ? `Far away, the ${assistT.label.replace('The ', '').toLowerCase()} answers: something you gave up arrives.`
+      : `Far away, something at the ${assistT.label.replace('The ', '').toLowerCase()} stirs.` });
     voice(s, out, 'help', VOICE_LINES.help, 8);
   } else if (goal === 'ANCHOR' && eligible) {
     s.anchors.find(a => a.id === eligible)!.partnerReady = true;
+    addStep(s, { actor: 'partner', fromNodeId: s.partner.nodeId, toNodeId: s.partner.nodeId, action: 'ANCHOR', cause: `Their world met the ${eligible}.`, effect: 'They hold it open for you.' });
+    out.push({ type: 'PARTNER_TRACE', text: `Somewhere, the ${eligible.toLowerCase()} answers in a world that is not yours.` });
     text = `Partner reaches the ${eligible} and holds it open for you.`;
     voice(s, out, 'anchor', VOICE_LINES.anchor, 4);
   } else {
     goal = 'STABILISE';
     s.bondStrain = clamp100(s.bondStrain - 4);
+    addStep(s, { actor: 'partner', fromNodeId: s.partner.nodeId, toNodeId: s.partner.nodeId, action: 'STABILISE', cause: refused ? 'Your request was too dangerous.' : 'Nothing safe to try.', effect: 'Strain -4.' });
     text = refused
       ? 'Partner refuses: too dangerous. They steady the Thread instead (strain -4).'
-      : assistT === null && Object.keys(s.nodes).length >= PARTNER_EVENT_NODE_CAP
+      : assistT === null && Object.values(s.nodes).filter(n => n.owner === 'partner').length >= PARTNER_EVENT_NODE_CAP
         ? 'Partner has no safe event left to try. They steady the Thread (strain -4).'
         : 'Partner holds still while their world settles (strain -4).';
     voice(s, out, 'safe', VOICE_LINES.safe, 8);
