@@ -43,7 +43,7 @@ export class Shell {
     this.root = $(host, '#os');
     const on = (sel: string, fn: () => void) => { $(this.root, sel).onclick = () => fn(); };
     on('#b-mute', () => h.toggleMute()); on('#b-reduce', () => h.toggleReduce());
-    on('#b-help', () => this.help(true)); on('#b-style', () => toggleArtStyle());
+    on('#b-cog', () => $(this.root, '#settings').classList.toggle('open')); on('#b-style', () => toggleArtStyle());
     on('#help-close', () => this.help(false));
     on('#t-play', () => h.play()); on('#t-new', () => h.newGame()); on('#t-demo', () => h.demo());
     on('#t-mute', () => h.toggleMute());
@@ -52,7 +52,6 @@ export class Shell {
     on('#id-amber', () => h.identity('amber')); on('#id-cyan', () => h.identity('cyan'));
     on('#e-archive', () => h.openArchive()); on('#e-again', () => h.restart());
     on('#v-self', () => h.verb('SELF')); on('#v-echo', () => h.verb('ECHO')); on('#v-let', () => h.verb('LET_GO')); on('#v-use', () => h.verb('USE'));
-    on('#b-last', () => this.replay());
     const vec: Record<string, [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
     this.root.querySelectorAll<HTMLButtonElement>('.dpad button').forEach(b => {
       const [x, y] = vec[b.dataset.d!];
@@ -151,7 +150,7 @@ export class Shell {
   render(s: Readonly<SimulationState>): void {
     applyMeta(this.root, s.realityDrift, s.bondStrain, this.reduce);
     this.root.classList.toggle('id-cyan', s.v2?.playerIdentity === 'cyan');
-    $(this.root, '#b-mute').textContent = this.muted ? 'SOUND: OFF' : 'SOUND: ON';
+    $(this.root, '#b-mute').textContent = this.muted ? 'MUTED' : 'SND';
     $(this.root, '#b-reduce').textContent = this.reduce ? 'DISTORTION: LOW' : 'DISTORTION: FULL';
     $(this.root, '#b-style').textContent = `STYLE: ${ART_LABEL}`;
     $(this.root, '#b-mute').setAttribute('aria-pressed', String(this.muted));
@@ -185,12 +184,9 @@ const blob = (cls: string): string => `<svg class="blob ${cls}" viewBox="0 0 64 
 const TEMPLATE = `
 <div id="os" class="os" data-screen="title">
   <header class="topbar" aria-label="Game controls">
-    <span class="logo">OUT OF SYNC</span><span class="spacer"></span>
-    <button id="b-last" title="Replay last caption (L)" aria-label="Replay last caption">L</button>
-    <button id="b-style" title="Switch art style (reloads)">STYLE</button>
-    <button id="b-mute" aria-pressed="false">SOUND: ON</button>
-    <button id="b-reduce" aria-pressed="false">DISTORTION: FULL</button>
-    <button id="b-help">HELP</button>
+    <button id="b-mute" aria-pressed="false" title="Sound" aria-label="Sound">SND</button>
+    <button id="b-cog" title="Settings" aria-label="Settings">&#9881;</button>
+    <div id="settings" class="settings"><button id="b-reduce" aria-pressed="false">DISTORTION: FULL</button><button id="b-style">STYLE</button></div>
   </header>
   <main class="stage">
     <div class="viewport" id="viewport"><div id="game"></div><div id="caps" class="caps" role="status" aria-live="polite"></div></div>
@@ -228,7 +224,7 @@ const TEMPLATE = `
     <p class="i-1">Two of you, side by side.</p>
     <p class="i-2">Then a branch opens between you.</p>
     <p class="i-3">Which one of them are you?</p>
-    <div class="btns choose"><button id="id-amber" class="idbtn amber">${blob('amber')}<span>AMBER</span></button><button id="id-cyan" class="idbtn cyan">${blob('cyan')}<span>CYAN</span></button></div>
+    <div class="btns choose"><button id="id-amber" class="idbtn amber">${blob('amber')}<span>JENSEN</span></button><button id="id-cyan" class="idbtn cyan">${blob('cyan')}<span>SAM</span></button></div>
   </div></section>
 
   <section id="ending" class="screen ending" data-end="WIN"><div class="card">

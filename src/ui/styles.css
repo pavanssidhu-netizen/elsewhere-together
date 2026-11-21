@@ -16,11 +16,13 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 
 .os { height:100%; display:flex; flex-direction:column; position:relative; background:var(--midnight); }
 
-/* ---- minimal top bar ---- */
-.topbar { display:flex; gap:6px; align-items:center; padding:4px 8px; background:rgba(17,22,38,.96); border-bottom:1px solid var(--teal); flex:none; }
-.topbar .logo { color:var(--amber); font-weight:bold; letter-spacing:2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.topbar .spacer { flex:1; }
-.topbar button { min-height:28px; padding:2px 8px; font-size:12px; }
+/* ---- tiny corner controls: sound + settings cog (world stays full-bleed) ---- */
+.topbar { position:absolute; top:6px; right:6px; z-index:20; display:flex; gap:4px; align-items:flex-start; }
+.topbar > button { min-height:28px; min-width:32px; padding:2px 7px; font-size:12px; background:rgba(239,230,214,.78); color:#3b3a40; border:1px solid rgba(59,58,64,.5); opacity:.7; }
+.topbar > button:hover { opacity:1; }
+.settings { display:none; position:absolute; top:34px; right:0; flex-direction:column; gap:4px; background:rgba(239,230,214,.96); border:1px solid rgba(59,58,64,.6); padding:6px; }
+.settings.open { display:flex; }
+.settings button { background:transparent; color:#3b3a40; border:1px solid rgba(59,58,64,.5); font-size:12px; min-height:30px; white-space:nowrap; }
 .os:not([data-screen=play]) .topbar { display:none; }
 
 /* ---- play view: world only ---- */
@@ -29,6 +31,7 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 #game { flex:none; line-height:0; }
 #game canvas { display:block; }
 :root:not(.style-ink) #game canvas { image-rendering:pixelated; image-rendering:crisp-edges; }
+.style-scribble .viewport { background:#efe6d6; }
 
 .caps { position:absolute; left:50%; transform:translateX(-50%); top:10px; width:min(92%,640px); display:flex; flex-direction:column; gap:6px; pointer-events:none; z-index:5; }
 .cap { background:rgba(17,22,38,.92); border-left:4px solid var(--mist); color:#f1ede4; padding:6px 10px; font-size:15px; line-height:1.35; opacity:1; transition:opacity .5s; }

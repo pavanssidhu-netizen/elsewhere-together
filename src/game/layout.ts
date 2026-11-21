@@ -16,9 +16,9 @@ export const OBJECT_POSITIONS: Record<string, Pt> = Object.fromEntries(
 );
 
 export const OBJECT_LABELS: Record<string, string> = {
-  lantern: 'OLD LAMP', bridge: 'BRIDGE', radio: 'SIGNAL MAST', greenhouse: 'FLOODED NURSERY', tide: 'TIDAL GATE',
-  anchor_LANTERN: 'ANCHOR: LAMP', anchor_GREENHOUSE: 'ANCHOR: NURSERY',
-  anchor_LIGHTHOUSE: 'ANCHOR: LIGHTHOUSE', thread_terminal: 'THREAD TERMINAL', stones: 'OLD ECHO STONES',
+  lantern: 'CLEARING FIRE', bridge: 'BRIDGE', radio: 'HUM STONES', greenhouse: 'GARDEN', tide: 'SLUICE',
+  anchor_LANTERN: 'FIRE RUNE', anchor_GREENHOUSE: 'GARDEN RUNE',
+  anchor_LIGHTHOUSE: 'BEACON', thread_terminal: 'THREAD STONE', stones: 'ECHO STONES',
 };
 /** Objects that are choices (E keep / Q send across / F let it be). Everything else: E = use. */
 export const FORK_OBJECTS = new Set(['lantern', 'bridge', 'radio', 'greenhouse', 'tide']);

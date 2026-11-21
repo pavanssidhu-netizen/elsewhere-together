@@ -18,7 +18,7 @@
 import Phaser from 'phaser';
 import type { SimulationState, Stats, Command, Choice, Identity } from '../sim/types';
 import { canWalk, getNearbyInteractables, TILE as TT } from '../world/topology';
-import { preloadScribble, prepareScribbleTextures, drawScribbleWorld, drawScribbleAmbient, ScribbleFx, ctxOf, identityColour, otherColour, SK, type Apparition } from './scribble';
+import { preloadScribble, prepareScribbleTextures, drawScribbleWorld, drawScribbleAmbient, ScribbleFx, ctxOf, charTexture, SK, type Apparition } from './scribble';
 import {
   TILE, MAP_W, MAP_H, MAP_ROWS, OBJECT_POSITIONS, PALETTE as P,
   isBlockedPx, PLAYER_START, VIEW_W, VIEW_H,
@@ -103,6 +103,8 @@ export class WorldScene extends Phaser.Scene {
   private identity: Identity = 'amber';
   private fx!: ScribbleFx;
   private apparitions: Apparition[] = [];
+  private scPlayer!: Phaser.GameObjects.Image;
+  private scPartner!: Phaser.GameObjects.Image;
   private lastCtx: ReturnType<typeof ctxOf> = null;
   private drawnLamp = false;
   private drawnLh = false;
@@ -115,7 +117,14 @@ export class WorldScene extends Phaser.Scene {
     registerTextures(this);
     if (ART_SCRIBBLE) { prepareScribbleTextures(this); this.fx = new ScribbleFx(this); }
     this.cameras.main.setBackgroundColor(ART_SCRIBBLE ? SK.paper : P.midnight);
-    if (ART_INK) { // canvas is INK_SCALE x the logical grid; zoom the camera so world coordinates stay 320x180
+    if (ART_SCRIBBLE) { // Gate B: follow camera, ~11 tiles wide on desktop, fewer on phones, clamped to the 20x11 world
+      const cam = this.cameras.main;
+      cam.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
+      cam.setZoom(window.innerWidth < 700 ? 9.5 : 7.3);
+      this.scPlayer = this.add.image(this.px, this.py, charTexture('amber')).setDepth(5).setOrigin(0.5, 0.62);
+      this.scPartner = this.add.image(0, 0, charTexture('cyan')).setDepth(5).setOrigin(0.5, 0.62).setVisible(false);
+      cam.startFollow(this.scPlayer, false, 0.14, 0.14);
+    } else if (ART_INK) { // canvas is INK_SCALE x the logical grid; zoom the camera so world coordinates stay 320x180
       this.cameras.main.setZoom(INK_SCALE);
       this.cameras.main.centerOn(VIEW_W / 2, VIEW_H / 2);
     }
@@ -177,6 +186,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   showPartnerTrace(objectId?: string, ms = 3500): void {
+    if (ART_SCRIBBLE) return; // the partner is never drawn in the world (Gate B)
     const p = (objectId && OBJECT_POSITIONS[objectId]) || { x: this.px + 14, y: this.py - 2 };
     const off = objectId ? -13 : 0;
     this.apparitions = [{ x: p.x + off, y: p.y + 6, until: this.time.now + ms, label: 'VARIANT / ECHO' }];
@@ -209,6 +219,7 @@ export class WorldScene extends Phaser.Scene {
   // ---------- static world drawing (tile images from sprites.ts) ----------
   private drawWorld(c: Phaser.GameObjects.Container, w: Stats, s: Readonly<SimulationState>, ghost = false): void {
     c.removeAll(true);
+    if (ART_SCRIBBLE && ghost) return;
     if (ART_SCRIBBLE) { const cx = ctxOf(s, s.player.nodeId, ghost); if (cx) { cx.w = w; drawScribbleWorld(this, c, cx); } return; }
     const img = (x: number, y: number, frame: string, tint?: number): Phaser.GameObjects.Image => {
       const i = this.add.image(x, y, TEX.tiles, frame).setOrigin(0, 0).setScale(SC);
@@ -340,39 +351,26 @@ export class WorldScene extends Phaser.Scene {
     if (spr.anims.currentAnim?.key !== k) spr.play(k);
   }
 
-  private drawScribbleDynamic(g: Phaser.GameObjects.Graphics, t: number, s: Readonly<SimulationState>): void {
-    const cx = this.lastCtx; const reduce = this.hooks.reduce();
-    const alien = s.v2?.realm === 'ALIEN';
+  private drawScribbleDynamic(_g: Phaser.GameObjects.Graphics, t: number, s: Readonly<SimulationState>): void {
     const idn = s.v2?.playerIdentity ?? this.identity;
-    if (cx) drawScribbleAmbient(g, cx, t, reduce, this.focusId, { lit: this.drawnLamp, lhLit: this.drawnLh });
-    // focus ring on the focused object
-    if (this.focusId) {
-      const p = OBJECT_POSITIONS[this.focusId], ph = reduce ? 0 : Math.sin(t * 3);
-      g.lineStyle(0.9, SK.graphite, 0.85); g.strokeEllipse(p.x, p.y + 5, 15, 7);
-      g.lineStyle(0.6, idn === 'cyan' ? SK.cyan : SK.amber, 1); g.strokeEllipse(p.x, p.y + 5, 15 + ph, 7 + ph * 0.5);
-    }
-    // partner apparitions (never physically present): translucent, dashed, labelled
-    const now = this.time.now; let labelled = false;
-    for (const ap of this.apparitions) {
-      const left = (ap.until - now) / 1000; if (left <= 0) continue;
-      const a = Math.min(0.55, left * 0.5) * (reduce ? 1 : 0.85 + 0.15 * Math.sin(t * 3));
-      this.fx.figure(g, ap.x, ap.y, otherColour(idn), 1, 0, a, true, alien);
-      this.fx.label(true, ap.x, ap.y - 17, Math.min(1, a * 2), ap.label); labelled = true;
-    }
-    if (!labelled) this.fx.label(false, 0, 0, 0);
-    this.apparitions = this.apparitions.filter(a => a.until > now);
+    const now = this.time.now;
     const ending = this.endingStart >= 0 ? (now - this.endingStart) / 1000 : -1;
-    const col = identityColour(idn);
+    const sp = this.scPlayer;
+    const SZ = 15; // logical px: the 64px sprite body is ~2/3 of it, i.e. about one tile tall
+    sp.setTexture(charTexture(idn));
     if (ending < 0) {
-      const bob = this.stepT < 1 ? Math.abs(Math.sin(this.stepT * Math.PI)) * 1.6 : 0;
-      this.fx.figure(g, this.px, this.py + 4, col, this.facing, bob, 1, false, alien);
-    } else { // ending: both beings converge, a thread arcs between them
-      const k = Math.min(1, Math.max(0, (ending - 1.2) / 3)), cxm = 160, cym = 110;
-      const ax = 100 + (cxm - 6 - 100) * k, bx = 220 + (cxm + 6 - 220) * k;
-      g.lineStyle(1.1, SK.amber, 0.9); g.beginPath(); g.arc(ax + (bx - ax) / 2, cym - 4, (bx - ax) / 2, Math.PI, Math.PI * (1 + Math.min(1, ending / 2.5)), false); g.strokePath();
-      this.fx.figure(g, ax, cym + 4, col, 1, 0, 1, false, alien); this.fx.figure(g, bx, cym + 4, otherColour(idn), -1, 0, 1, false, alien);
+      this.scPartner.setVisible(false);
+      const bob = this.stepT < 1 ? Math.abs(Math.sin(this.stepT * Math.PI)) : 0;
+      sp.setPosition(this.px, this.py + 3 - bob * 1.2).setDisplaySize(SZ * (1 + bob * 0.04), SZ * (1 - bob * 0.06)).setFlipX(this.facing < 0);
+      sp.setRotation(this.moving ? Math.sin(this.walkT * 22) * 0.07 : 0);
+    } else { // ending: both beings converge and meet (the only time the partner is drawn)
+      const k = Math.min(1, Math.max(0, (ending - 1.2) / 3)), cxm = this.px, cym = this.py + 3;
+      sp.setRotation(0).setDisplaySize(SZ, SZ).setPosition(cxm - 22 + 17 * k, cym).setFlipX(false);
+      this.scPartner.setTexture(charTexture(idn === 'cyan' ? 'amber' : 'cyan')).setVisible(true).setDisplaySize(SZ, SZ).setPosition(cxm + 22 - 17 * k, cym).setFlipX(true);
     }
-    this.fx.prompt(ending < 0 ? this.focusId : null, this.px, this.py + 4, t);
+    void t;
+    const fp = this.focusId && ending < 0 ? OBJECT_POSITIONS[this.focusId] : null;
+    this.fx.prompt(fp ? this.focusId : null, fp ? fp.x : 0, fp ? fp.y : 0);
   }
 
   private drawDynamic(time: number, dt: number, s: Readonly<SimulationState>): void {
