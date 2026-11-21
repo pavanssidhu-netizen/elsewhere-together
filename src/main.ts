@@ -8,6 +8,7 @@ import { WorldScene } from './game/WorldScene';
 import { ART_INK, INK_SCALE } from './game/artStyle';
 import { OBJECT_LABELS, VIEW_W, VIEW_H } from './game/layout';
 import { Shell, type Verb } from './ui/shell';
+import * as topo from './world/topology';
 
 const SAVE_KEY = 'elsewhere-together-save-v1'; // same key on purpose: old (no `v2`) saves are detected and a new game is offered
 const PREF_KEY = 'elsewhere-together-prefs-v1';
@@ -291,6 +292,7 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
     setMeters: (drift: number, strain: number) => {
       const st = engine.getState() as SimulationState; st.realityDrift = drift; st.bondStrain = strain; notify(st, []);
     },
+    topo,
     pos: () => sceneAny().pos?.(), teleport: (x: number, y: number) => sceneAny().teleport?.(x, y),
     texDataUrl: (key: string) => (game.textures.get(key).getSourceImage() as HTMLCanvasElement).toDataURL('image/png'),
   };
