@@ -181,7 +181,7 @@ function notify(s: Readonly<SimulationState>, events: DomainEvent[]): void {
       case 'VOICE': audio.playVoice(ev.cue); shell.caption(ev.text, 'voice', 5000); break;
       case 'WORLD_CHANGED': shell.caption(ev.text, 'world'); break;
       case 'WARNING': shell.caption(ev.text, 'warning', 6000); break;
-      case 'PARTNER_TRACE': shell.caption(ev.text, 'trace'); break;
+      case 'PARTNER_TRACE': shell.caption(ev.text, 'trace'); sceneAny()?.showPartnerTrace?.(ev.objectId); break;
       case 'REJECTED': shell.caption(ev.reason, 'warning', 4500); break;
       case 'FORK_RESOLVED': {
         const r = ev.record;

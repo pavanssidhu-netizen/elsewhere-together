@@ -28,7 +28,7 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 .viewport { position:relative; min-height:0; background:var(--midnight); overflow:hidden; display:flex; align-items:center; justify-content:center; }
 #game { flex:none; line-height:0; }
 #game canvas { display:block; }
-.style-pixel #game canvas { image-rendering:pixelated; image-rendering:crisp-edges; }
+:root:not(.style-ink) #game canvas { image-rendering:pixelated; image-rendering:crisp-edges; }
 
 .caps { position:absolute; left:50%; transform:translateX(-50%); top:10px; width:min(92%,640px); display:flex; flex-direction:column; gap:6px; pointer-events:none; z-index:5; }
 .cap { background:rgba(17,22,38,.92); border-left:4px solid var(--mist); color:#f1ede4; padding:6px 10px; font-size:15px; line-height:1.35; opacity:1; transition:opacity .5s; }
