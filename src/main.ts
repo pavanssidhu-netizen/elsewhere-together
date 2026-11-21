@@ -48,6 +48,9 @@ const keys = new Set<string>();
 let touchDir = { x: 0, y: 0 };
 let scene: WorldScene;
 let prevDrift = engine.getState().realityDrift;
+// Idle hint: if the player walks ~30 tiles without a meaningful action, surface the diegetic objective hint.
+const HINT_IDLE_TICKS = 30;
+let lastActionTick = 0, lastHintTick = 0;
 
 const send = (cmd: Command): DomainEvent[] => engine.dispatch(cmd);
 const isFork = (id: string | null): boolean => !!id && TEMPLATES.some(t => t.triggerObjectId === id);
@@ -176,6 +179,13 @@ function notify(s: Readonly<SimulationState>, events: DomainEvent[]): void {
   if (prevDrift < 60 && s.realityDrift >= 60) audio.playSfx('drift_warning');
   prevDrift = s.realityDrift;
   const worldCaption = events.some(e => e.type === 'WORLD_CHANGED');
+  if (events.some(e => e.type !== 'REJECTED')) {
+    if (events.some(e => e.type === 'FORK_RESOLVED' || e.type === 'ANCHOR_ALIGNED' || e.type === 'STRAIN_RECOVERED' || e.type === 'WORLD_CHANGED')) lastActionTick = s.v2.tick;
+  }
+  if (s.phase === 'EXPLORING' && s.v2.tick - lastActionTick >= HINT_IDLE_TICKS && s.v2.tick - lastHintTick >= HINT_IDLE_TICKS) {
+    const h = planner.objectiveHint(s);
+    if (h.text) { lastHintTick = s.v2.tick; shell.caption(h.text, 'trace', 5500); }
+  }
   for (const ev of events) {
     switch (ev.type) {
       case 'VOICE': audio.playVoice(ev.cue); shell.caption(ev.text, 'voice', 5000); break;

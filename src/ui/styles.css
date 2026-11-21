@@ -59,6 +59,10 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
   .caps { top:4px; }
   .cap { font-size:14px; }
 }
+@media ((pointer:coarse) or (max-width:760px)) and (orientation:portrait) {
+  /* portrait phones: world sits just above the thumb controls; captions use the space above it */
+  .viewport { align-items:flex-end; }
+}
 @media (max-height:420px) and (orientation:landscape) {
   .stage { grid-template-columns:auto minmax(0,1fr) auto; grid-template-rows:minmax(0,1fr); }
   .viewport { grid-column:2; grid-row:1; }

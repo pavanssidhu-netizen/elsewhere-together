@@ -31,7 +31,8 @@ const DECIDE: Record<PolicyName, () => Decide> = {
       const h = objectiveHint(s);
       const isFork = FORK_OBJS.includes(h.objectId);
       // a human reads the hint and walks there; they pick a verb by feel
-      const c = act(s, h.objectId, isFork ? weighted(rng, 0.5, 0.35) : undefined);
+      const verb = isFork ? (h.verb && rng() < 0.6 ? h.verb : weighted(rng, 0.5, 0.35)) : undefined; // reads the hint 60% of the time
+      const c = act(s, h.objectId, verb);
       if (c) { wander = 0; return c; }
       wander++;
       return wait(s);

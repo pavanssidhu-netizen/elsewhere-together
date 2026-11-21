@@ -140,7 +140,7 @@ export function planWin(input: Readonly<SimulationState> | { getState(): Readonl
 }
 
 /** Diegetic next-objective suggestion for a novice: which object to approach and a hint sentence. */
-export function objectiveHint(s: Readonly<SimulationState>): { objectId: string; text: string } {
+export function objectiveHint(s: Readonly<SimulationState>): { objectId: string; text: string; verb?: Choice } {
   const target = ANCHOR_ORDER.find(id => !s.anchors.find(a => a.id === id)!.aligned)!;
   const chk = checkAnchor(s as SimulationState, target);
   if (chk.ok) return { objectId: 'anchor_' + target, text: `The ${target.toLowerCase()} anchor is ready.` };
@@ -148,6 +148,16 @@ export function objectiveHint(s: Readonly<SimulationState>): { objectId: string;
   if (s.bondStrain > 55) return { objectId: 'thread_terminal', text: HINTS.REST };
   const failing = failingReqs(s, ANCHOR_REQS[target].player);
   const t = templateFor(failing);
-  if (t) return { objectId: OBJ_OF[t], text: `The ${t} needs your attention.` };
+  if (t) return { objectId: OBJ_OF[t], text: `The ${t} needs your attention.`, verb: 'SELF' };
+  // Partner-side need: tell the player what their partner is missing and which verb helps.
+  const needs = partnerNeeds(s);
+  const pend = pendingEchoes(s);
+  if (needs.signal && !pend.some(c => c.kind === 'signal') && pend.length < 2)
+    return { objectId: 'lantern', text: 'Their light keeps failing. At the lamp, send it across (Q).', verb: 'ECHO' };
+  if (needs.growth && !pend.some(c => c.kind === 'growth') && pend.length < 2)
+    return { objectId: 'greenhouse', text: 'Their seedlings are dying. At the nursery, send it across (Q).', verb: 'ECHO' };
+  const useful = pend.some(c => (c.kind === 'signal' && needs.signal) || (c.kind === 'growth' && needs.growth));
+  if (useful) return { objectId: 'thread_terminal', text: 'Your gift is still travelling. Rest at the terminal while it arrives.' };
+  if (!chk.ok && chk.hint === HINTS.DRIFT) return { objectId: 'stones', text: chk.hint };
   return { objectId: 'thread_terminal', text: chk.ok ? '' : chk.hint };
 }

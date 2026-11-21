@@ -1,15 +1,17 @@
-# Elsewhere, Together (V1)
+# Out of Sync (V2)
 
-A rain-soaked coastal town seen through an unstable observation console (ECHO/OS). You are amber. Your partner, cyan, lives in a diverging branch. Uncertain events split reality in two. **SELF** takes the outcome that helps you. **ECHO** accepts the worse outcome so your partner gets an advantage, at a cost to the bond. Align three shared anchors (Lantern, Greenhouse, Lighthouse) while keeping drift and strain in check.
+Two halves of one fictional symbiote wake up in diverging versions of the same sketched coastal hamlet. Uncertain events (an old lamp, a bridge, a signal mast, a flooded nursery, a tidal gate) split reality in two. At each one you can **keep** the better outcome for yourself, **send it across** to your partner at a cost to you, or **let it be**. Your partner acts on their own in their own branch. Align three shared anchors (Lantern, Greenhouse, Lighthouse) so the two worlds can meet, or let the thread fray until you fade. Either ending opens the causal archive: the full branch tree with both of your journeys.
 
-TypeScript + Vite + Phaser 3 + DOM/CSS. The sim (`src/sim`) has no Phaser or DOM dependency and is fully deterministic (seed 48219).
+TypeScript + Vite + Phaser 3 + DOM/CSS. The sim (`src/sim`, `src/world`) has no Phaser or DOM dependency and is fully deterministic.
 
 ## Run
 ```
-npm install --registry https://registry.npmjs.org/   # or your usual registry
+npm install --registry https://registry.npmjs.org/
 npm run dev        # local dev
-npm test           # 27 sim tests (determinism, forks, echo, softlocks, win gating, save/restore)
+npm test           # 42 sim tests (determinism, topology, fixed WIN/FADE/ALIEN replays, save/restore)
 npm run build      # static site in dist/ (index.html at root, relative paths)
+npx vite-node scripts/bots.ts -- --seeds 500   # headless playability sweep (7 bot policies)
+node e2e/run.mjs   # real-browser test (needs local playwright + chromium, see file header)
 ```
 Deploy `dist/` to any static host. It needs no network at runtime.
 
@@ -17,35 +19,41 @@ Deploy `dist/` to any static host. It needs no network at runtime.
 | | Desktop | Mobile |
 |---|---|---|
 | Move | WASD / arrows | D-pad |
-| Interact | E / Space | ACT |
-| Call partner | C | CALL |
-| Archive | Tab / M | ARCHIVE tab |
-| Retrace | R | RETRACE in archive |
-| Close | Esc | Back |
+| Keep it (SELF) / use object | E (or Space) | KEEP / USE |
+| Send it across (ECHO) | Q | SEND |
+| Let it be (LET GO) | F | LET BE |
+| Replay last caption | L | L |
 
-THREAD_LINK buttons: FIND ME, STAY SAFE, HELP, REST (lowers strain by 12 at a thread terminal). Header toggles: music, distortion, help.
+Top bar: style (SCRIBBLE / PIXEL / INK / INK-LIGHT), sound, distortion, help. The old echo stones calm the thread (lower drift). The thread terminal lowers strain. If you wander for a while without acting, a hint appears.
 
-## Demo / designer shortcuts
-- Start screen **DEMO PATH** plays the scripted winning route.
-- `?debug=1` exposes `window.__et.debug` (set drift/strain, teleport).
-- Tunables: event deltas in `src/sim/events.ts`, partner policy in `src/sim/agent.ts`, anchor requirements and win thresholds in `src/sim/anchors.ts`, partner lines in `src/content/dialogue.ts`, palette/art in `src/game/sprites.ts`, synth music in `src/audio/audioEngine.ts`.
+## Designer shortcuts
+- Title **DEMO** plays a winning route step by step through the real engine.
+- `?debug=1` exposes `window.__et`.
+- Tunables: `src/sim/tuning.ts` (all balance constants), `src/sim/events.ts`, `src/sim/agent.ts`, `src/sim/anchors.ts`, `src/world/topology.ts` (map and walkability), `src/content/dialogue.ts`, `src/game/scribble.ts` (art), `src/audio/audioEngine.ts` (synth music).
+
+## Playability (bot sweep, 300 seeds, 600-tick cap)
+| Policy | Win | Fade | Timeout | Softlock |
+|---|---|---|---|---|
+| PLANNER | 100% | 0 | 0 | 0 |
+| NOVICE (walks to the hint target, follows the suggested verb 60% of the time) | 100% | 0 | 0 | 0 |
+| ECHO_HEAVY | 100% | 0 | 0 | 0 |
+| LET_GO_HEAVY | 95% | 0 | 5% | 0 |
+| SELF_ONLY (never sends anything across) | 43% | 0 | 57% | 0 |
+| RANDOM_CURIOUS | 3% | 0 | 97% | 0 |
+| MALICIOUS (maximises drift) | 0 | 100% | 0 | 0 |
+
+These are synthetic policies. They test possibility, fairness and softlocks, not fun or clarity.
 
 ## Audio and ElevenLabs
-See `docs/AUDIO.md`. Summary:
-- **Music is a procedural Web Audio synth** (no ElevenLabs music is generated yet, deliberately, to preserve credits).
-- Voice (9 partner lines) and SFX (6 cues) are pre-rendered at build time by `scripts/generate_audio.py` into `public/assets/audio/`. The script is a **dry run by default** (prints a credit estimate, about 800 credits total) and only calls the API with `--go`. The key is read from env `ELEVENLABS_API_KEY` or `--key-file`, never bundled. `api_keys/` is gitignored.
-- **Not yet generated.** Until you run it, the game uses synthesized stand-ins and on-screen subtitles.
+See `docs/AUDIO.md`. Music is a procedural Web Audio synth; no ElevenLabs music is generated. `scripts/generate_audio.py` prerenders the 9 voice lines and 6 SFX. It is a dry run by default (about 800 credits estimated) and only calls the API with `--go`. The key comes from env or `--key-file` and is never bundled; `api_keys/` is gitignored. Until you run it, the game uses synthesized stand-ins and captions.
 
 ## Known limitations
-- Tested in headless Chromium only (desktop 1280x800, mobile 360x740 with simulated touch); no real phone, iOS Safari or sound-on listening test yet.
-- Keyboard walk to the LIGHTHOUSE ending was not exercised in the browser; the winning path is verified in the sim tests and the DEMO PATH reaches the ending in the browser.
-- ECHO was not exercised through the UI in e2e (covered in sim tests).
-- Desktop world canvas is small within its panel; visual effects at high drift/strain were checked via CSS classes and one screenshot, not tuned by eye.
-- Credit estimates and the default voice id in the script are unverified assumptions.
-- `e2e/run.mjs` needs `CHROME_PATH` set to a local Chromium.
+- Headless Chromium only (desktop 1280x800, simulated phone 360x740). No real phone, iOS Safari or sound-on listening test.
+- No human cold-start playtest yet.
+- Nearly every win aligns anchors in the order Lantern, Greenhouse, Lighthouse.
+- Legacy commands (BEGIN_FORK, RESOLVE_FORK, ACTIVATE_ANCHOR, RETRACE) still exist without proximity checks; the UI and bots use only MOVE/INTERACT.
 
-## Credits and attributions (V2)
-
-- **Art:** "Scribble Dungeons" by Kenney (kenney.nl), licensed CC0. Files and licence are in `public/assets/scribble/`.
-- **Voices and SFX:** generated with ElevenLabs (see Audio above). Music is synthesised in the browser.
-- **Science referenced (the game is fiction, not physics):** Everett (1957), relative-state formulation and the many-worlds interpretation; DeWitt (1970s), popularisation of many-worlds; Zurek (2003), decoherence, Reviews of Modern Physics; Bronstein (2015), *Mutualism*, Oxford University Press. The in-game About screen repeats these.
+## Credits and attributions
+- **Art:** "Scribble Dungeons" by Kenney (kenney.nl), CC0. Files and licence in `public/assets/scribble/`.
+- **Voices and SFX:** ElevenLabs (when generated). Music is synthesised in the browser.
+- **Science referenced (the game is fiction, not physics):** Everett (1957), relative-state formulation and the many-worlds interpretation; DeWitt (1970s), popularisation of many-worlds; Zurek (2003), decoherence, Reviews of Modern Physics; Bronstein (2015), *Mutualism*, Oxford University Press.

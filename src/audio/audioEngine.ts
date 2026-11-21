@@ -1,5 +1,5 @@
 /**
- * Adaptive audio for "Elsewhere, Together".
+ * Adaptive audio for "Out of Sync".
  *
  * Music is 100% synthesized with Web Audio (no music files). Voice/SFX try
  * assets/audio/voice_<cue>.mp3 and sfx_<name>.mp3 and fall back to synthesized stand-ins.

@@ -301,7 +301,8 @@ export class WorldScene extends Phaser.Scene {
     let f: string | null = null, second: string | null = null;
     if (nd && this.endingStart < 0) {
       const near = getNearbyInteractables(nd.world, nd.flags, this.tile, s.v2?.realm ?? 'TOWN')
-        .map(id => ({ id, d: Math.hypot(OBJECT_POSITIONS[id].x - this.px, OBJECT_POSITIONS[id].y - this.py) })).sort((p, q) => p.d - q.d);
+        // anchors get a small distance penalty so a fork object you walked up to wins ties (lamp vs lantern anchor)
+        .map(id => ({ id, d: Math.hypot(OBJECT_POSITIONS[id].x - this.px, OBJECT_POSITIONS[id].y - this.py) + (id.startsWith('anchor_') ? 10 : 0) })).sort((p, q) => p.d - q.d);
       f = near[0]?.id ?? null; second = near[1]?.id ?? null;
     }
     this.secondId = second;

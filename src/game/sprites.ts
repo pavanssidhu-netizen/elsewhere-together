@@ -1,5 +1,5 @@
 /**
- * Programmatic original pixel art for "Elsewhere, Together". No image files: everything is drawn
+ * Programmatic original pixel art for "Out of Sync". No image files: everything is drawn
  * onto canvas textures at runtime by `registerTextures(scene)` (call once, e.g. in the Boot/Preload scene
  * create(); safe to call again, it skips textures that exist).
  *

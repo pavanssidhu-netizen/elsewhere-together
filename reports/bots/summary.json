@@ -108,21 +108,21 @@
   },
   "NOVICE": {
     "seeds": 500,
-    "win": 59.4,
+    "win": 100,
     "fade": 0,
-    "timeout": 40.6,
+    "timeout": 0,
     "softlock": 0,
-    "medianTicks": 180,
-    "medianInteractions": 131,
-    "echoesDonated": 0.9,
-    "echoesConsumed": 0.6,
-    "maxDrift": 72,
+    "medianTicks": 35,
+    "medianInteractions": 10,
+    "echoesDonated": 1.9,
+    "echoesConsumed": 1.8,
+    "maxDrift": 70,
     "maxStrain": 68,
     "eggRate": 0,
     "winningAnchorOrders": [
       "LGL"
     ],
-    "winningStrategies": 8
+    "winningStrategies": 7
   },
   "_meta": {
     "seeds": 500,

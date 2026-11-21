@@ -185,7 +185,7 @@ const blob = (cls: string): string => `<svg class="blob ${cls}" viewBox="0 0 64 
 const TEMPLATE = `
 <div id="os" class="os" data-screen="title">
   <header class="topbar" aria-label="Game controls">
-    <span class="logo">ELSEWHERE, TOGETHER</span><span class="spacer"></span>
+    <span class="logo">OUT OF SYNC</span><span class="spacer"></span>
     <button id="b-last" title="Replay last caption (L)" aria-label="Replay last caption">L</button>
     <button id="b-style" title="Switch art style (reloads)">STYLE</button>
     <button id="b-mute" aria-pressed="false">SOUND: ON</button>
@@ -208,7 +208,7 @@ const TEMPLATE = `
   <div id="bloom" class="bloom" aria-hidden="true"></div>
 
   <section id="title" class="screen title open"><div class="card">
-    <h1>ELSEWHERE,<br>TOGETHER</h1>
+    <h1>OUT OF<br>SYNC</h1>
     <p class="tag">Two of you. One thread. A world that splits whenever you choose.</p>
     <p id="t-stale" class="warn-t" hidden>YOUR SAVE IS FROM AN EARLIER VERSION OR COULD NOT BE READ. START A NEW GAME (the old save stays untouched until then).</p>
     <div class="btns"><button id="t-play" class="primary">PLAY</button><button id="t-new" hidden>NEW GAME</button><button id="t-demo">DEMO</button><button id="t-mute">SOUND: ON</button><button id="t-about">ABOUT</button></div>
