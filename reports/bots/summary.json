@@ -1,46 +1,43 @@
 {
   "planner": {
-    "seeds": 200,
-    "win": 99.5,
-    "fade": 0.5,
+    "seeds": 100,
+    "win": 100,
+    "fade": 0,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 80,
-    "medianInteractions": 13,
-    "avgCalls": 1.3,
+    "medianTicks": 95,
+    "medianInteractions": 24,
+    "avgCalls": 1,
     "secretRate": 0,
-    "maxDrift": 57,
-    "maxStrain": 35,
+    "maxDrift": 69,
+    "maxStrain": 63,
     "winningAnchorOrders": [
       "LGL"
     ],
-    "winningStrategies": 3,
+    "winningStrategies": 4,
     "winSeedSample": [
       1,
       2,
       3
     ],
-    "fadeSeedSample": [
-      83
-    ],
+    "fadeSeedSample": [],
     "timeoutSeedSample": []
   },
   "guided_novice": {
-    "seeds": 200,
-    "win": 98.5,
-    "fade": 1.5,
+    "seeds": 100,
+    "win": 98,
+    "fade": 2,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 161,
-    "medianInteractions": 21,
-    "avgCalls": 1.2,
+    "medianTicks": 223,
+    "medianInteractions": 42,
+    "avgCalls": 1.1,
     "secretRate": 0,
-    "maxDrift": 63,
-    "maxStrain": 35,
+    "maxDrift": 75,
+    "maxStrain": 42,
     "winningAnchorOrders": [
       "LGL",
-      "LLG",
-      "GLL"
+      "LLG"
     ],
     "winningStrategies": 16,
     "winSeedSample": [
@@ -49,20 +46,19 @@
       3
     ],
     "fadeSeedSample": [
-      5,
-      97,
-      163
+      7,
+      59
     ],
     "timeoutSeedSample": []
   },
   "mostly_calls": {
-    "seeds": 200,
+    "seeds": 100,
     "win": 0,
     "fade": 100,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 186,
-    "medianInteractions": 10,
+    "medianTicks": 196,
+    "medianInteractions": 11,
     "avgCalls": 9,
     "secretRate": 0,
     "maxDrift": 53,
@@ -78,45 +74,45 @@
     "timeoutSeedSample": []
   },
   "cautious_self": {
-    "seeds": 200,
-    "win": 81.5,
-    "fade": 18.5,
+    "seeds": 100,
+    "win": 81,
+    "fade": 19,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 128,
-    "medianInteractions": 11,
+    "medianTicks": 164,
+    "medianInteractions": 23,
     "avgCalls": 0,
     "secretRate": 0,
-    "maxDrift": 57,
-    "maxStrain": 17,
+    "maxDrift": 69,
+    "maxStrain": 25,
     "winningAnchorOrders": [
       "LGL"
     ],
     "winningStrategies": 4,
     "winSeedSample": [
       1,
-      2,
-      3
+      3,
+      4
     ],
     "fadeSeedSample": [
+      2,
       10,
-      24,
-      36
+      12
     ],
     "timeoutSeedSample": []
   },
   "random_interactor": {
-    "seeds": 200,
+    "seeds": 100,
     "win": 0,
-    "fade": 88.5,
-    "timeout": 11.5,
-    "timeoutWithNextStep": 23,
-    "medianTicks": 392,
-    "medianInteractions": 47,
-    "avgCalls": 3.3,
-    "secretRate": 1,
+    "fade": 97,
+    "timeout": 3,
+    "timeoutWithNextStep": 3,
+    "medianTicks": 310,
+    "medianInteractions": 49,
+    "avgCalls": 2.4,
+    "secretRate": 0,
     "maxDrift": 63,
-    "maxStrain": 67,
+    "maxStrain": 54,
     "winningAnchorOrders": [],
     "winningStrategies": 0,
     "winSeedSample": [],
@@ -126,22 +122,22 @@
       3
     ],
     "timeoutSeedSample": [
-      17,
-      34,
-      40
+      13,
+      14,
+      83
     ]
   },
   "reckless": {
-    "seeds": 200,
+    "seeds": 100,
     "win": 0,
     "fade": 100,
     "timeout": 0,
     "timeoutWithNextStep": 0,
     "medianTicks": 164,
     "medianInteractions": 4,
-    "avgCalls": 4.3,
+    "avgCalls": 4.2,
     "secretRate": 0,
-    "maxDrift": 30,
+    "maxDrift": 54,
     "maxStrain": 40,
     "winningAnchorOrders": [],
     "winningStrategies": 0,
@@ -154,20 +150,19 @@
     "timeoutSeedSample": []
   },
   "secret_hunter": {
-    "seeds": 200,
-    "win": 99.5,
-    "fade": 0.5,
+    "seeds": 100,
+    "win": 100,
+    "fade": 0,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 93,
-    "medianInteractions": 18,
-    "avgCalls": 1.3,
+    "medianTicks": 99,
+    "medianInteractions": 26,
+    "avgCalls": 1,
     "secretRate": 100,
-    "maxDrift": 57,
-    "maxStrain": 35,
+    "maxDrift": 69,
+    "maxStrain": 63,
     "winningAnchorOrders": [
-      "LGL",
-      "GLL"
+      "LGL"
     ],
     "winningStrategies": 4,
     "winSeedSample": [
@@ -175,13 +170,11 @@
       2,
       3
     ],
-    "fadeSeedSample": [
-      7
-    ],
+    "fadeSeedSample": [],
     "timeoutSeedSample": []
   },
   "_meta": {
-    "seeds": 200,
+    "seeds": 100,
     "maxTicks": 700,
     "note": "timeoutWithNextStep = timeouts where an observation-based hint still named a next physical step"
   }
