@@ -1,6 +1,6 @@
 // Real-browser test of the V2 shell: node e2e/run.mjs   (spawns vite dev server, drives headless Chromium via playwright)
 // Env: CHROME_PATH (chromium/headless-shell executable), PLAYWRIGHT_PATH (playwright module), STYLE (art style query), SHOTS_DIR.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 
@@ -11,15 +11,20 @@ const PORT = 5199, APP = `http://localhost:${PORT}/?debug=1${STYLE}`;
 const SHOTS = (process.env.SHOTS_DIR || new URL('../docs/shots/v2/', import.meta.url).pathname).replace(/\/?$/, '/');
 fs.mkdirSync(SHOTS, { recursive: true });
 
-const srv = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { cwd: new URL('..', import.meta.url).pathname, stdio: 'ignore' });
+// Test a production build served statically (a dev server hot-reloads whenever another agent saves a file).
+const ROOT = new URL('..', import.meta.url).pathname, OUT = `/tmp/et-e2e-dist-${process.pid}`;
+const b = spawnSync('npx', ['vite', 'build', '--outDir', OUT, '--emptyOutDir'], { cwd: ROOT, stdio: 'ignore' });
+if (b.status !== 0) { console.log('vite build failed'); process.exit(2); }
+const srv = spawn('npx', ['vite', 'preview', '--outDir', OUT, '--port', String(PORT), '--strictPort'], { cwd: ROOT, stdio: 'ignore' });
 const results = [];
 const check = (name, ok, info = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? ' :: ' + info : ''}`); };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const errors = [];
+const safe = (p) => { const o = p.screenshot.bind(p); p.screenshot = async (a) => { try { return await o({ ...a, timeout: 15000 }); } catch { console.log('screenshot failed', a.path); } }; return p; };
 async function waitServer() { for (let i = 0; i < 60; i++) { try { const r = await fetch(`http://localhost:${PORT}/`); if (r.ok) return; } catch {} await sleep(500); } throw new Error('server'); }
 
 const st = (page) => page.evaluate(() => { const s = window.__et.engine.getState(); return { phase: s.phase, turn: s.turn, node: s.player.nodeId, won: s.won, ending: s.v2?.ending, tick: s.v2?.tick, gx: s.v2?.gridX, gy: s.v2?.gridY, id: s.v2?.playerIdentity, events: s.events.length, nodes: Object.keys(s.nodes).length, journey: s.v2?.journey.length }; });
-const screen = (page) => page.evaluate(() => document.getElementById('os').dataset.screen);
+const screen = (page) => page.evaluate(() => document.getElementById('os')?.dataset.screen);
 const vis = (page, sel) => page.evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; }, sel);
 
 /** Legal MOVE steps (topology BFS) until adjacent to the object. */
@@ -53,7 +58,7 @@ try {
   await waitServer();
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/home/pavsidh/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell' });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const page = await ctx.newPage();
+  const page = safe(await ctx.newPage());
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
@@ -97,11 +102,11 @@ try {
   check('WASD moves the player (grid pos or tick changes)', g1.gx !== g0.gx || g1.gy !== g0.gy || g1.tick !== g0.tick, `${g0.gx},${g0.gy},t${g0.tick} -> ${g1.gx},${g1.gy},t${g1.tick}`);
 
   // ---------- walk to a fork object, interact, bloom ----------
-  const reached = await walkObj(page, 'lantern');
-  check('legal MOVEs reach the lantern', reached);
+  const reached = await walkObj(page, 'greenhouse');
+  check('legal MOVEs reach the greenhouse', reached);
   await sleep(400);
   const focus = await page.evaluate(() => window.__et.focus());
-  check('scene focuses lantern -> contextual verb buttons', focus === 'lantern' && (await vis(page, '#v-self')) && (await vis(page, '#v-echo')) && (await vis(page, '#v-let')), `focus=${focus}`);
+  check('scene focuses lantern -> contextual verb buttons', focus === 'greenhouse' && (await vis(page, '#v-self')) && (await vis(page, '#v-echo')) && (await vis(page, '#v-let')), `focus=${focus}`);
   await page.screenshot({ path: SHOTS + 'shell-07-near-object.png' });
   const e0 = (await st(page)).events;
   await page.keyboard.press('e'); await sleep(120);
@@ -110,7 +115,7 @@ try {
   const keyWorked = s2.events > e0;
   check('E key at focused fork interacts (fork resolves)', keyWorked, `events ${e0}->${s2.events}`);
   if (!keyWorked) { // fall back to the same legal command so the rest of the flow is still exercised
-    await page.evaluate(() => window.__et.send({ type: 'INTERACT', objectId: 'lantern', choice: 'LET_GO' })); await sleep(120);
+    await page.evaluate(() => window.__et.send({ type: 'INTERACT', objectId: 'greenhouse', choice: 'LET_GO' })); await sleep(120);
     bloomed = await page.evaluate(() => document.getElementById('bloom').classList.contains('on'));
   }
   check('fork -> dusty pink bloom class applied', bloomed);
@@ -137,7 +142,7 @@ try {
 
   // ---------- old save -> offer new game ----------
   const old = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const op = await old.newPage(); op.on('pageerror', e => errors.push('old pageerror: ' + e.message));
+  const op = safe(await old.newPage()); op.on('pageerror', e => errors.push('old pageerror: ' + e.message));
   await op.goto(APP); await op.evaluate(() => localStorage.setItem('elsewhere-together-save-v1', JSON.stringify({ version: 1, seed: 1, turn: 5, nodes: {}, player: {}, partner: {} }))); await op.goto(APP);
   await op.waitForSelector('#t-new', { state: 'visible' }); await sleep(300);
   check('old save: notice + NEW GAME offered, Continue hidden', (await vis(op, '#t-stale')) && (await vis(op, '#t-new')) && !(await vis(op, '#t-play')));
@@ -148,7 +153,7 @@ try {
 
   // ---------- DEMO: planWin to an ending ----------
   const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const d = await dctx.newPage(); d.on('pageerror', e => errors.push('demo pageerror: ' + e.message));
+  const d = safe(await dctx.newPage()); d.on('pageerror', e => errors.push('demo pageerror: ' + e.message));
   await d.goto(APP); await d.evaluate(() => localStorage.clear()); await d.goto(APP);
   await d.waitForSelector('#t-demo'); await d.click('#t-demo'); await sleep(2500);
   check('DEMO starts in play view', (await screen(d)) === 'play');
@@ -201,7 +206,7 @@ try {
 
   // ---------- mobile 360x740 ----------
   const mctx = await browser.newContext({ viewport: { width: 360, height: 740 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
-  const m = await mctx.newPage(); m.on('pageerror', e => errors.push('mobile pageerror: ' + e.message));
+  const m = safe(await mctx.newPage()); m.on('pageerror', e => errors.push('mobile pageerror: ' + e.message));
   await freshToPlay(m, 'id-amber');
   await m.screenshot({ path: SHOTS + 'shell-20-mobile-identity.png' });
   await m.tap('#id-amber'); await sleep(1200);
@@ -216,7 +221,7 @@ try {
   await m.evaluate(() => { const b = document.querySelector('.dpad [data-d=right]'); b.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, bubbles: true })); });
   const mp1 = await st(m);
   check('mobile: d-pad moves player', mp1.gx !== mp0.gx || mp1.gy !== mp0.gy || mp1.tick !== mp0.tick, `${mp0.gx},${mp0.gy} -> ${mp1.gx},${mp1.gy}`);
-  await m.evaluate(() => window.__et.shell.setVerbs('fork', 'LANTERN')); await sleep(100);
+  await m.evaluate(() => window.__et.shell.setVerbs('fork', 'GREENHOUSE')); await sleep(100);
   const vb = await m.evaluate(() => ['#v-self', '#v-echo', '#v-let'].map(q => { const r = document.querySelector(q).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), Math.round(r.right), Math.round(r.bottom)]; }));
   check('mobile: verb buttons >=44px and on screen', vb.every(([w, h, r, b]) => w >= 44 && h >= 44 && r <= 360 && b <= 740), JSON.stringify(vb));
   await m.screenshot({ path: SHOTS + 'shell-22-mobile-verbs.png' });

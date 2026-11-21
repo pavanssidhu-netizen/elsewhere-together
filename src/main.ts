@@ -91,7 +91,7 @@ function beginPlay(): void {
   const s = engine.getState();
   if (s.phase === 'BOOT') send({ type: 'SET_PHASE', phase: 'EXPLORING' });
   else notify(engine.getState(), []);
-  scene?.refresh();
+  sceneAny()?.syncToState?.(); scene?.refresh();
   window.setTimeout(fitCanvas, 30);
 }
 
