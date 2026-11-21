@@ -17,3 +17,7 @@ Only the user can record an approval. The agent records what it presented.
 **Status:** in progress.
 **Presented (lead, integrated build):** `docs/v3/gateB-live-desktop.png` (1280x800) and `docs/v3/gateB-live-mobile.png` (390x844), from the built `dist/` in headless Chromium after Play, skip facts, choose JENSEN, walk right. 0 page errors. 26 manifest textures loaded (`docs/v3/gateB-assets.txt`) plus Sam = `character_roundGreen` recoloured cyan. Object crops: `docs/v3/gateB-crop-*.png` (agent-captured, positions forced).
 **Status:** awaiting user reply (`APPROVE B` or corrections).
+
+## V4 Checkpoint A: first playable proof
+**Presented:** `docs/v4/A-*.png` (proof script A, seed 1, played in the real built game in headless Chromium through MOVE/INTERACT, 36 commands, 0 page errors). Contact reached: river diverted -> wheel stopped + carving reachable -> read frequency -> followed the other history at the sluice -> powered radio tuned -> partner answers.
+**Status:** awaiting user reply.

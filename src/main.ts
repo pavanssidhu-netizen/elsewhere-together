@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import './ui/styles.css';
-import { SimEngine, TEMPLATES } from './sim/engine';
+import { SimEngine, TEMPLATES, availableActions } from './sim/engine';
 import * as planner from './sim/planner';
 import type { Command, DomainEvent, SimulationState, Identity, Choice } from './sim/types';
 import { AudioEngine } from './audio/audioEngine';
@@ -12,7 +12,7 @@ import * as topo from './world/topology';
 
 const SAVE_KEY = 'elsewhere-together-save-v1'; // same key on purpose: old (no `v2`) saves are detected and a new game is offered
 const PREF_KEY = 'elsewhere-together-prefs-v1';
-const SEED = 48219;
+const SEED = Number(new URLSearchParams(location.search).get('seed')) || 48219; // ?seed=N for reproducible demos
 
 // ---------- prefs ----------
 let prefs = { muted: false, reduce: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false };
@@ -78,14 +78,25 @@ function canMove(): boolean {
 }
 
 /** E = keep (SELF) / use, Q = send across (ECHO), F = let it be (LET_GO). Non-fork objects only answer to USE. */
-function interact(v: Verb): void {
-  if (!canMove()) return;
-  if (!focusId) { shell.caption('Move next to something that glows.', 'system', 2500); return; }
-  const fork = isFork(focusId);
-  if (fork === (v === 'USE')) return;
-  const cmd: Command = fork ? { type: 'INTERACT', objectId: focusId, choice: v as Choice } : { type: 'INTERACT', objectId: focusId };
-  send(cmd);
+/** V4: contextual world actions. Slot 0/1/2 = E/Q/F (and the three touch buttons). */
+function focusOptions() {
+  if (!focusId) return [];
+  return availableActions(engine.getState(), focusId).slice(0, 3);
 }
+function refreshVerbs(): void {
+  const opts = focusOptions();
+  shell.setVerbs(focusId ? 'fork' : null, focusId ? (OBJECT_LABELS[focusId] ?? focusId) : '', opts.map(o => o.label));
+}
+function interactSlot(i: number): void {
+  if (!canMove()) return;
+  if (!focusId) { shell.caption('Walk up to something to look at it.', 'system', 2500); return; }
+  const opts = focusOptions();
+  const o = opts[i];
+  if (!o) { if (i === 0) send({ type: 'INTERACT', objectId: focusId }); return; }
+  if (!o.enabled && o.clue) { shell.caption(o.clue, 'world', 4500); return; }
+  send({ type: 'INTERACT', objectId: focusId, action: o.action } as Command);
+}
+function interact(v: Verb): void { interactSlot(v === 'ECHO' ? 1 : v === 'LET_GO' ? 2 : 0); }
 
 function beginPlay(): void {
   playing = true;
@@ -171,10 +182,23 @@ function startDemo(): void {
   window.setTimeout(step, 800);
 }
 
+// ---------- V4 divergence: drain colour from the world as the histories drift apart (no meters) ----------
+function applyDivergence(s: Readonly<SimulationState>): void {
+  const d = s.realityDrift, link = (s as any).link as string | undefined;
+  let band = d >= 80 || link === 'LAST_SIGNAL' ? 3 : d >= 55 || link === 'FRAYING' ? 2 : d >= 30 ? 1 : 0;
+  if (s.phase === 'ENDING') band = 0;
+  const sat = [1, 0.7, 0.4, 0.15][band], cool = [0, 8, 16, 24][band];
+  const c = game?.canvas as HTMLCanvasElement | undefined;
+  if (c) { c.style.transition = 'filter 1.2s ease'; c.style.filter = prefs.reduce && band ? `saturate(${Math.max(sat, 0.5)})` : `saturate(${sat}) hue-rotate(${cool}deg) contrast(${1 - band * 0.04})`; }
+  document.documentElement.dataset.diverge = String(band);
+}
+
 // ---------- domain events -> UI/audio/scene ----------
 function notify(s: Readonly<SimulationState>, events: DomainEvent[]): void {
   shell.render(s);
   scene?.refresh();
+  refreshVerbs();
+  applyDivergence(s);
   audio.setState(s.realityDrift, s.bondStrain);
   if (prevDrift < 60 && s.realityDrift >= 60) audio.playSfx('drift_warning');
   prevDrift = s.realityDrift;
@@ -243,7 +267,7 @@ scene = new WorldScene({
   dispatch: (c: Command) => send(c),
   onFocus: (id: string | null) => {
     focusId = id;
-    shell.setVerbs(id ? (isFork(id) ? 'fork' : 'use') : null, id ? (OBJECT_LABELS[id] ?? id) : '');
+    refreshVerbs();
   },
   onMoveEnd: () => { /* V2: the scene dispatches MOVE per tile */ },
 } as any);
@@ -279,10 +303,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (shell.screen === 'play' && !shell.helpOpen()) {
     if (MOVE_KEYS.has(k)) { keys.add(k); e.preventDefault(); return; }
-    if (k === 'e') { e.preventDefault(); interact(isFork(focusId) ? 'SELF' : 'USE'); return; }
-    if (k === ' ') { e.preventDefault(); interact(isFork(focusId) ? 'LET_GO' : 'USE'); return; }
-    if (k === 'q') { interact('ECHO'); return; }
-    if (k === 'f') { interact('LET_GO'); return; }
+    if (k === 'e' || k === ' ') { e.preventDefault(); interactSlot(0); return; }
+    if (k === 'q') { interactSlot(1); return; }
+    if (k === 'f') { interactSlot(2); return; }
   }
   if (k === 'l') { shell.replay(); return; }
   if (k === '?' || k === 'h') { if (shell.screen === 'play') shell.help(!shell.helpOpen()); }
@@ -300,6 +323,7 @@ document.addEventListener('click', (e) => {
   state: () => engine.getState(),
   send, scene: () => scene, focus: () => focusId, demoRunning: () => demoRunning,
   planWin: () => planFrom(engine.getState() as SimulationState),
+  proofs: () => import('./sim/proofs').then(m => m.proofScripts),
 };
 if (new URLSearchParams(location.search).get('debug') === '1') {
   (window as any).__et.debug = {

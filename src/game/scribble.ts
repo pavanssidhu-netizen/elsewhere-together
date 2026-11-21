@@ -21,6 +21,7 @@ export const USED_ASSETS = [
   'scribble-dungeons/wall', 'scribble-dungeons/wall_corner', 'scribble-dungeons/wall_curve', 'scribble-dungeons/wall_damaged',
   'scribble-dungeons/wall_half', 'scribble-dungeons/water', 'scribble-dungeons/wood',
   'scribble-platformer/character_roundYellow', 'scribble-platformer/character_roundGreen',
+  'scribble-dungeons/trapdoor_round', 'scribble-platformer/tile_cog',
 ];
 const K = (n: string): string => 'k:' + n;
 const SD = (n: string): string => K('scribble-dungeons/' + n);
@@ -173,6 +174,19 @@ export function drawScribbleWorld(scene: Phaser.Scene, c: Phaser.GameObjects.Con
   // ---- sluice / tidal gate (10,8) over the water at (10,9) ----
   put(SD('wood'), 10.5, 9.5, 1.0, { tint: 0xd9c39a });
   put(SD(walk[8][10] ? 'door_open' : 'door_closed'), 10.5, 8.5 + (walk[8][10] ? 0 : 0.3), 1.0);
+
+  // ---- V4: waterwheel (9,8) by the sluice: turns while the river flows, still when diverted ----
+  { const F = new Set(flags); const turning = !F.has('WHEEL_STOPPED') && !F.has('WATER_DIVERTED');
+    const wheel = put(K('scribble-platformer/tile_cog'), 9.5, 8.5, 0.95, { tint: turning ? 0xe3c796 : 0xa9a49a });
+    wheel.setData('spin', turning ? 1 : 0);
+    // inscription stone (13,8): always visible across the water, reachable only once the water is diverted
+    put(SD('trapdoor_round'), 13.5, 8.5, 0.8, { tint: 0xd8cfbd });
+    // dry undergrowth / fire spread / smoke: reuse imported plants + campfire, tinted
+    if (F.has('DRY')) for (const [tx, ty] of [[8, 6], [10, 6], [12, 6], [7, 3]] as const) put(SD('plants'), tx + 0.5, ty + 0.5, 0.7, { tint: 0xc9b27a });
+    if (F.has('FIRE_SPREAD')) for (const [tx, ty] of [[10.4, 3.6], [11.6, 3.4], [12.5, 4.4]] as const) put(SD('campfire'), tx, ty, 0.8, { tint: 0xff9a5a });
+    if (F.has('SMOKE')) for (const [tx, ty] of [[12.5, 3.5], [12.5, 4.5]] as const) put(SD('puddle'), tx, ty, 1.3, { tint: 0x8a8a8a, a: 0.55 });
+    if (F.has('WATER_DIVERTED')) put(SD('puddle'), 10.5, 9.5, 0.9, { tint: 0xbfd6d6, a: 0.8 });
+  }
 
   // ---- beacon (lighthouse H at 16,7): stairs + wall_curve ring + campfire ----
   { const cxp = 16.5, cyp = 7.5, sz = 0.62;

@@ -196,7 +196,15 @@ export class WorldScene extends Phaser.Scene {
   }
 
   showPartnerTrace(objectId?: string, ms = 3500): void {
-    if (ART_SCRIBBLE) return; // the partner is never drawn in the world (Gate B)
+    if (ART_SCRIBBLE) { // V4: a cyan Thread echo at the landmark where the partner acted in THEIR world (not the partner itself)
+      const p = (objectId && OBJECT_POSITIONS[objectId]) || { x: this.px, y: this.py - 10 };
+      const im = this.add.image(p.x, p.y - 4, charTexture('cyan')).setDepth(6).setAlpha(0).setScale((this.scPlayer?.scaleX ?? 1) * 0.9);
+      im.setTint(0x7be0df);
+      const r = this.add.image(p.x, p.y, 'k:scribble-dungeons/trapdoor_round').setDepth(5).setAlpha(0).setScale(0.18).setTint(0x7be0df);
+      this.tweens.add({ targets: [im, r], alpha: { from: 0, to: 0.55 }, yoyo: true, hold: ms * 0.5, duration: 600, onComplete: () => { im.destroy(); r.destroy(); } });
+      this.tweens.add({ targets: r, scale: 0.3, duration: ms, ease: 'Sine.easeOut' });
+      return;
+    }
     const p = (objectId && OBJECT_POSITIONS[objectId]) || { x: this.px + 14, y: this.py - 2 };
     const off = objectId ? -13 : 0;
     this.apparitions = [{ x: p.x + off, y: p.y + 6, until: this.time.now + ms, label: 'VARIANT / ECHO' }];
@@ -302,6 +310,10 @@ export class WorldScene extends Phaser.Scene {
   // ---------- per-frame ----------
   update(time: number, delta: number): void {
     const dt = Math.min(delta, 100) / 1000;
+    if (ART_SCRIBBLE && !this.hooks.reduce()) for (const ch of this.children.list) {
+      const cont = ch as Phaser.GameObjects.Container;
+      if (cont.list) for (const im of cont.list as Phaser.GameObjects.Image[]) if (im.getData?.('spin')) im.rotation += dt * 0.9;
+    }
     const s = this.hooks.getState();
     const dir = this.hooks.canMove() && this.endingStart < 0 ? this.hooks.getDir() : { x: 0, y: 0 };
     const wasMoving = this.moving;

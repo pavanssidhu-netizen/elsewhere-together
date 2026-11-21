@@ -16,7 +16,7 @@ export const OBJECT_POSITIONS: Record<string, Pt> = Object.fromEntries(
 );
 
 export const OBJECT_LABELS: Record<string, string> = {
-  lantern: 'CLEARING FIRE', bridge: 'BRIDGE', radio: 'HUM STONES', greenhouse: 'GARDEN', tide: 'SLUICE',
+  lantern: 'CLEARING FIRE', bridge: 'BRIDGE', radio: 'RADIO STONES', greenhouse: 'GARDEN', tide: 'SLUICE (where the river split)', wheel: 'WATERWHEEL', inscription: 'CARVED STONE', planks: 'PLANK PILE', woodpile: 'DRY WOOD',
   anchor_LANTERN: 'FIRE RUNE', anchor_GREENHOUSE: 'GARDEN RUNE',
   anchor_LIGHTHOUSE: 'BEACON', thread_terminal: 'THREAD STONE', stones: 'ECHO STONES',
 };

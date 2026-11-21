@@ -114,10 +114,18 @@ export class Shell {
   // ---- play ----
   showPlay(): void { this.setScreen('play'); }
 
-  setVerbs(kind: 'fork' | 'use' | null, label?: string): void {
-    const bar = $(this.root, '#verbs'); bar.dataset.kind = kind ?? 'none';
+  setVerbs(kind: 'fork' | 'use' | null, label?: string, actions: string[] = []): void {
+    const bar = $(this.root, '#verbs'); bar.dataset.kind = kind ? 'ctx' : 'none';
     bar.classList.toggle('on', !!kind);
     $(this.root, '#v-target').textContent = label ?? '';
+    const ids = ['#v-self', '#v-echo', '#v-let'], keys = ['E', 'Q', 'F'];
+    ids.forEach((id, i) => {
+      const b = $(this.root, id) as HTMLButtonElement;
+      const a = actions[i] ?? (i === 0 && kind ? 'Look' : '');
+      b.style.display = a ? '' : 'none';
+      b.innerHTML = `${a} <kbd>${keys[i]}</kbd>`;
+    });
+    ($(this.root, '#v-use') as HTMLElement).style.display = 'none';
   }
 
   caption(text: string, kind: CaptionKind = 'world', ms = 4200): void {
@@ -239,7 +247,7 @@ const TEMPLATE = `
     <p>Walk to an object. Every old thing here splits the world in two when you touch it. You and your partner each live in one branch of it.</p>
     <ul>
       <li><b>KEEP (E)</b>: take what helps you. It may cost your partner later.</li>
-      <li><b>SEND (Q)</b>: send the benefit across to your partner. It costs you here.</li>
+      <li><b>E / Q / F</b>: the actions shown next to the object you are standing by.</li>
       <li><b>LET BE (F)</b>: leave it to chance. Preparing first can tip it.</li>
       <li>Warnings tell you where to go if the thread frays. The old stones and the thread terminal help.</li>
     </ul>
