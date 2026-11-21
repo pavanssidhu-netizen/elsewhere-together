@@ -15,3 +15,5 @@ Only the user can record an approval. The agent records what it presented.
 
 ## Gate B: one playable clearing
 **Status:** in progress.
+**Presented (lead, integrated build):** `docs/v3/gateB-live-desktop.png` (1280x800) and `docs/v3/gateB-live-mobile.png` (390x844), from the built `dist/` in headless Chromium after Play, skip facts, choose JENSEN, walk right. 0 page errors. 26 manifest textures loaded (`docs/v3/gateB-assets.txt`) plus Sam = `character_roundGreen` recoloured cyan. Object crops: `docs/v3/gateB-crop-*.png` (agent-captured, positions forced).
+**Status:** awaiting user reply (`APPROVE B` or corrections).

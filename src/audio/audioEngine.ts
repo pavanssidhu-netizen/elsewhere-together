@@ -44,10 +44,10 @@ const MELODY: [number, number, number][][] = [
 const BELL_BEATS: number[][] = [[1, 3.5], [2.5], [1.5, 3], [2], [1, 3.5], [2.5], [1.5], [2, 3.5]];
 
 const PRIORITY: Record<VoiceCue, number> = {
-  boot: 1, find: 1, safe: 1, help: 1, echo_received: 2, divergence: 2, overstrain: 2, anchor: 3, final: 4,
+  boot: 1, find: 1, safe: 1, help: 1, echo_received: 2, divergence: 2, overstrain: 2, anchor: 3, final: 4, clear: 2, distant: 1, refusal: 2,
 };
 const VOICE_PITCH: Record<VoiceCue, number> = {
-  boot: 392, find: 440, safe: 349, help: 330, echo_received: 523, divergence: 311, overstrain: 294, anchor: 587, final: 659,
+  boot: 392, find: 440, safe: 349, help: 330, echo_received: 523, divergence: 311, overstrain: 294, anchor: 587, final: 659, clear: 466, distant: 277, refusal: 262,
 };
 const SFX_MIN_GAP_MS: Record<SfxName, number> = {
   branch_split: 300, echo_send: 300, archive_open: 300, anchor_lock: 500, drift_warning: 8000, final_merge: 2000,

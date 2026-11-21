@@ -25,6 +25,7 @@ import {
 } from './layout';
 import { registerTextures, TEX, TILE as T, FX, animKey, SPRITE_SCALE as SC, GROUND_VARIANTS, type Dir } from './sprites';
 import { ART_INK, ART_LIGHT, ART_SCRIBBLE, INK_SCALE } from './artStyle';
+import { availableActions } from '../sim/engine';
 
 const DEEP_INK = 0x0b0f1c;
 /** Outline colour of overlay marks: deep ink on pale paper, pale mist on the dark ground. */
@@ -113,6 +114,14 @@ export class WorldScene extends Phaser.Scene {
 
   preload(): void { if (ART_SCRIBBLE) preloadScribble(this); }
 
+  /** SCRIBBLE: show ~14 tiles across on desktop, ~7 on narrow phones, never more world height than exists. */
+  fitZoom(): void {
+    if (!ART_SCRIBBLE) return;
+    const w = this.scale.width, h = this.scale.height;
+    const across = w < 700 ? 7 : 14;
+    this.cameras.main.setZoom(Math.max(w / (TT * across), h / (TT * 11)));
+  }
+
   create(): void {
     registerTextures(this);
     if (ART_SCRIBBLE) { prepareScribbleTextures(this); this.fx = new ScribbleFx(this); }
@@ -120,7 +129,8 @@ export class WorldScene extends Phaser.Scene {
     if (ART_SCRIBBLE) { // Gate B: follow camera, ~11 tiles wide on desktop, fewer on phones, clamped to the 20x11 world
       const cam = this.cameras.main;
       cam.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
-      cam.setZoom(window.innerWidth < 700 ? 9.5 : 7.3);
+      this.fitZoom();
+      this.scale.on('resize', () => this.fitZoom());
       this.scPlayer = this.add.image(this.px, this.py, charTexture('amber')).setDepth(5).setOrigin(0.5, 0.62);
       this.scPartner = this.add.image(0, 0, charTexture('cyan')).setDepth(5).setOrigin(0.5, 0.62).setVisible(false);
       cam.startFollow(this.scPlayer, false, 0.14, 0.14);
@@ -370,7 +380,13 @@ export class WorldScene extends Phaser.Scene {
     }
     void t;
     const fp = this.focusId && ending < 0 ? OBJECT_POSITIONS[this.focusId] : null;
-    this.fx.prompt(fp ? this.focusId : null, fp ? fp.x : 0, fp ? fp.y : 0);
+    let verbs: string | undefined;
+    if (fp && this.focusId) {
+      const keys = ['E', 'Q', 'F'];
+      const opts = availableActions(s, this.focusId).slice(0, 3);
+      verbs = opts.map((o, i) => `${keys[i]} ${o.label.toLowerCase()}`).join(' · ') || 'E look';
+    }
+    this.fx.prompt(fp ? this.focusId : null, fp ? fp.x : 0, fp ? fp.y : 0, verbs);
   }
 
   private drawDynamic(time: number, dt: number, s: Readonly<SimulationState>): void {

@@ -195,10 +195,10 @@ export class ScribbleFx {
   }
   clear(): void { this.cap.setVisible(false); }
   /** (ox,oy) = focused object position in world px. */
-  prompt(focusId: string | null, ox: number, oy: number): void {
+  prompt(focusId: string | null, ox: number, oy: number, verbsOverride?: string): void {
     if (!focusId) { this.cap.setVisible(false); return; }
     const z = this.scene.cameras.main.zoom;
-    const verbs = FORK_OBJECTS.has(focusId) ? 'E keep · Q send · F let be' : 'E use';
+    const verbs = verbsOverride ?? 'E look';
     this.cap.setText(`${OBJECT_LABELS[focusId] ?? focusId}\n${verbs}`).setScale(1 / z).setVisible(true).setPosition(ox, oy - 11);
   }
 }

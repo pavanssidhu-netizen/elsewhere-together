@@ -34,9 +34,9 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 .style-scribble .viewport { background:#efe6d6; }
 
 .caps { position:absolute; left:50%; transform:translateX(-50%); top:10px; width:min(92%,640px); display:flex; flex-direction:column; gap:6px; pointer-events:none; z-index:5; }
-.cap { background:rgba(17,22,38,.92); border-left:4px solid var(--mist); color:#f1ede4; padding:6px 10px; font-size:15px; line-height:1.35; opacity:1; transition:opacity .5s; }
+.cap { background:rgba(239,230,214,.96); border:1.5px solid #3b3a40; border-left:4px solid var(--mist); color:#2b2a30; font-family:Georgia,'DejaVu Serif',serif; padding:6px 10px; font-size:15px; line-height:1.35; opacity:1; transition:opacity .5s; }
 .cap.out { opacity:0; }
-.cap.k-warning { border-left-color:var(--coral,#e47f7c); color:#ffd9d6; }
+.cap.k-warning { border-left-color:var(--coral,#e47f7c); color:#7a2b28; }
 .cap.k-trace { border-left-color:var(--violet); font-style:italic; }
 .cap.k-voice { border-left-color:var(--cyan); }
 .cap.k-system { border-left-color:var(--amber); }
@@ -176,3 +176,6 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 .strain-b2 .viewport, .strain-b3 .viewport { box-shadow:inset 0 0 60px rgba(232,160,180,.18); }
 .reduce-distortion #game canvas { filter:none !important; }
 .reduce-distortion .viewport::after { display:none !important; }
+
+/* V3: keep captions clear of the corner buttons */
+.caps { top:44px; }

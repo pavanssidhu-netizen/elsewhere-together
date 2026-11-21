@@ -5,7 +5,7 @@ import * as planner from './sim/planner';
 import type { Command, DomainEvent, SimulationState, Identity, Choice } from './sim/types';
 import { AudioEngine } from './audio/audioEngine';
 import { WorldScene } from './game/WorldScene';
-import { ART_INK, INK_SCALE } from './game/artStyle';
+import { ART_INK, ART_SCRIBBLE, INK_SCALE } from './game/artStyle';
 import { OBJECT_LABELS, VIEW_W, VIEW_H } from './game/layout';
 import { Shell, type Verb } from './ui/shell';
 import * as topo from './world/topology';
@@ -254,6 +254,10 @@ function fitCanvas(): void {
   const w = vp.clientWidth, h = vp.clientHeight;
   if (!w || !h) return;
   const c = game.canvas; if (!c) return;
+  if (ART_SCRIBBLE) { // hand-drawn art: render at the viewport's real size, camera zoom decides how much forest shows
+    if (game.scale.width !== w || game.scale.height !== h) game.scale.resize(w, h);
+    c.style.width = w + 'px'; c.style.height = h + 'px'; return;
+  }
   const cw = (game.config.width as number), ch = (game.config.height as number);
   const k = Math.min(w / cw, h / ch);
   c.style.width = Math.floor(cw * k) + 'px'; c.style.height = Math.floor(ch * k) + 'px';
