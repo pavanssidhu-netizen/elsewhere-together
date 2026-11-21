@@ -28,5 +28,11 @@ export const TUNING = {
   WIN_STRAIN_MAX: 80,
   WOOD_RESTOCK_EVERY: 20,   // driftwood washes up: one pickup returns to each woodpile (no fuel softlock)
   PILE: 3,                  // pickups per wood / plank pile
+  FIRE_DRIFT: 14,           // drift while a fire spreads on the player's side
+  PROPAGATE_DRIFT: 10,
+  SPREAD_DRY: 0.65, SPREAD_WET: 0.15, // chance a lit signal fire spreads
+  RAIN_DIVERTED: 0.1, RAIN_FLOWING: 0.4, // chance per weather tick that rain puts the fire out
+  WEATHER_EVERY: 6,
+  ALT_COST: 5,              // strain to follow the other history
   SELF_DISCOVER: 0.01,      // chance per stuck partner tick (after 6) that it works out the sluice by trial
 };

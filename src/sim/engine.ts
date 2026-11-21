@@ -13,6 +13,7 @@ import {
 } from './core';
 import { ALIEN_TEXT, HINTS, INTRO, STONES_TEXT, TERMINAL_TEXT, TOO_FAR, VOICE_LINES } from '../content/dialogue';
 import { objectiveHint, planWin } from './planner';
+import { ignition, worldTick } from './world';
 
 export { TEMPLATES, objectiveHint, planWin };
 
@@ -24,18 +25,18 @@ const FORK_OBJECTS = new Set(TEMPLATES.map(t => t.triggerObjectId));
 const ANCHORS: Array<[AnchorId, AnchorKind]> = [['LANTERN', 'HEAR'], ['GREENHOUSE', 'FIND'], ['LIGHTHOUSE', 'MEET']];
 
 export const DEFAULT_ACTION: Record<string, PhysicalAction> = {
-  lantern: 'RELIGHT', bridge: 'BRACE', radio: 'TUNE', greenhouse: 'PROTECT', tide: 'OPEN_SLUICE', planks: 'GATHER', woodpile: 'GATHER',
+  lantern: 'RELIGHT', bridge: 'BRACE', radio: 'TUNE', greenhouse: 'PROTECT', tide: 'DIVERT_WATER', wheel: 'OBSERVE', inscription: 'READ', planks: 'GATHER', woodpile: 'GATHER',
   stones: 'REST', thread_terminal: 'REST', anchor_LANTERN: 'OBSERVE', anchor_GREENHOUSE: 'OBSERVE', anchor_LIGHTHOUSE: 'BEACON',
 };
 const ALLOWED: Record<string, PhysicalAction[]> = {
   lantern: ['RELIGHT', 'OBSERVE'], bridge: ['BRACE', 'OBSERVE'], radio: ['TUNE', 'HOLD_SIGNAL', 'OBSERVE'],
-  greenhouse: ['PROTECT', 'HARVEST', 'REST', 'OBSERVE'], tide: ['OPEN_SLUICE', 'OBSERVE'], planks: ['GATHER', 'OBSERVE'],
+  greenhouse: ['PROTECT', 'HARVEST', 'REST', 'OBSERVE'], tide: ['DIVERT_WATER', 'FOLLOW_ALTERNATE', 'OPEN_SLUICE', 'OBSERVE'], wheel: ['OBSERVE'], inscription: ['READ', 'OBSERVE'], planks: ['GATHER', 'OBSERVE'],
   woodpile: ['GATHER', 'OBSERVE'], stones: ['REST', 'OBSERVE', 'TUNE', 'HOLD_SIGNAL'], thread_terminal: ['REST', 'OBSERVE'],
   anchor_LANTERN: ['OBSERVE', 'REST'], anchor_GREENHOUSE: ['OBSERVE', 'REST'], anchor_LIGHTHOUSE: ['BEACON', 'OBSERVE'],
 };
 const LABEL: Record<PhysicalAction, string> = {
-  RELIGHT: 'Relight', BRACE: 'Brace the bridge', OPEN_SLUICE: 'Open the sluice', PROTECT: 'Protect the seedlings', HARVEST: 'Harvest dry fibre',
-  TUNE: 'Tune', HOLD_SIGNAL: 'Hold the signal', OBSERVE: 'Look closely', BEACON: 'Light the beacon', GATHER: 'Gather', REST: 'Rest here',
+  RELIGHT: 'Light the signal fire', DIVERT_WATER: 'Divert the water', FOLLOW_ALTERNATE: 'Follow the other history', READ: 'Read the carving', BRACE: 'Brace the bridge', OPEN_SLUICE: 'Open the sluice', PROTECT: 'Protect the seedlings', HARVEST: 'Harvest dry fibre',
+  TUNE: 'Tune the radio', HOLD_SIGNAL: 'Hold the signal', OBSERVE: 'Look closely', BEACON: 'Light the beacon', GATHER: 'Gather', REST: 'Rest here',
 };
 
 /** Deprecated V2 alias: INTERACT.choice -> PhysicalAction. LET_GO = the object's default, SELF = the "take" verb, ECHO = hold the signal. */
@@ -53,10 +54,10 @@ export function createInitialState(seed: number): SimulationState {
   const s: SimulationState = {
     version: 2, seed, turn: 0,
     nodes: {
-      root: { id: 'root', parentId: null, depth: 0, eventInstanceId: null, outcomeId: null, world: { ...base, water: 1 }, flags: [], visitState: 'VISITED', children: ['N0001', 'N0002'], owner: 'player' },
+      root: { id: 'root', parentId: null, depth: 0, eventInstanceId: null, outcomeId: null, world: { ...base, water: 1 }, flags: ['WHEEL_TURNING'], visitState: 'VISITED', children: ['N0001', 'N0002'], owner: 'player' },
       // The opening event (a tree falls between them) splits the two histories.
-      N0001: { id: 'N0001', parentId: 'root', depth: 1, eventInstanceId: 'E0001', outcomeId: 'A', world: { ...base }, flags: ['BRIDGE_CLOSED'], visitState: 'VISITED', children: [], owner: 'player' },
-      N0002: { id: 'N0002', parentId: 'root', depth: 1, eventInstanceId: 'E0001', outcomeId: 'B', world: { ...base }, flags: ['BRIDGE_CLOSED', 'PLANKS_LOST'], visitState: 'VISITED', children: [], owner: 'partner' },
+      N0001: { id: 'N0001', parentId: 'root', depth: 1, eventInstanceId: 'E0001', outcomeId: 'A', world: { ...base }, flags: ['BRIDGE_CLOSED', 'WHEEL_TURNING'], visitState: 'VISITED', children: [], owner: 'player' },
+      N0002: { id: 'N0002', parentId: 'root', depth: 1, eventInstanceId: 'E0001', outcomeId: 'B', world: { ...base }, flags: ['BRIDGE_CLOSED', 'PLANKS_LOST', 'WHEEL_TURNING'], visitState: 'VISITED', children: [], owner: 'partner' },
     },
     events: [{
       eventInstanceId: 'E0001', templateId: 'opening', actorId: 'player', parentNodeId: 'root', childNodeIds: ['N0001', 'N0002'],
@@ -264,7 +265,7 @@ export interface ActionOption { action: PhysicalAction; label: string; enabled: 
 export function availableActions(s: Readonly<SimulationState>, obj: string): ActionOption[] {
   const list = ALLOWED[obj] ?? [];
   const sc = s as SimulationState;
-  return list.filter(a => a !== 'OBSERVE').map(a => {
+  return list.filter(a => a !== 'OBSERVE' && a !== 'OPEN_SLUICE').map(a => {
     const clue = blockedClue(sc, obj, a);
     return { action: a, label: LABEL[a], enabled: !clue, ...(clue ? { clue } : {}) };
   });
@@ -281,6 +282,8 @@ function blockedClue(s: SimulationState, obj: string, a: PhysicalAction): string
     return null;
   }
   if (a === 'OBSERVE') return null;
+  if (a === 'FOLLOW_ALTERNATE') return alternateOf(s) ? null : 'There is no other history to follow from here.';
+  if (a === 'READ') return null;
   if (!spec) return null;
   return spec.blocked({ s, who: 'player', prepared: false });
 }
@@ -290,6 +293,8 @@ function describe(s: SimulationState, obj: string): string {
   switch (obj) {
     case 'lantern': return win(s, 'player', 'LANTERN_LIT') ? 'The lantern burns. Its light reaches the road.' : s.player.inventory.fuel < 1 ? 'The fire pit is cold. Dry wood by the trees, or dry fibre from the garden, could catch.' : 'The glass is whole. With fuel in hand, it could catch.';
     case 'bridge': return !win(s, 'player', 'BRIDGE_CLOSED') ? 'The bridge spans the stream.' : s.player.inventory.plank < 1 ? 'The span is missing boards. A pile of planks lies along the path.' : 'The supports look loose, but the planks you carry would fit.';
+    case 'wheel': return win(s, 'player', 'WHEEL_TURNING') ? 'The waterwheel turns, slow and steady.' : 'The waterwheel hangs still.';
+    case 'inscription': return 'Carved in the stone: a pattern of three long, one short. A frequency.';
     case 'tide': return nodeOf(s, 'player').world.water <= 1 ? 'The sluice runs open. The water is low.' : 'The gate holds the stream back. The ford and the sand path are underwater.';
     case 'greenhouse': return win(s, 'player', 'GARDEN_WITHERED') ? 'The beds are bare.' : win(s, 'player', 'GARDEN_GROWN') ? 'The seedlings stand tall. It is a safe place to rest.' : 'Seedlings, and dry fibre among the stalks.';
     case 'radio': return win(s, 'player', 'RADIO_CLEAR') ? 'The set holds one steady tone.' : 'The set crackles. The tone slides in and out.';
@@ -334,6 +339,23 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     markAnchor(s, 'LIGHTHOUSE', out, undefined, true);
     return true;
   }
+  if (action === 'READ') {
+    const k = (s.player.knowledge ??= []);
+    const fresh = !k.includes('KNOWS_FREQUENCY');
+    if (fresh) k.push('KNOWS_FREQUENCY');
+    out.push({ type: 'WORLD_CHANGED', objectId: obj, text: 'Carved in the stone: a pattern of three long, one short. A frequency.' });
+    addHistory(s, 'player', 'BEACON', 'READ', undefined, 'Learned the frequency.');
+    markExamined(s, obj);
+    if (fresh) v.ineffective = 0;
+    s.turn++; partnerTurn(s, out);
+    return afterAction(s, out, fresh, true);
+  }
+  if (action === 'FOLLOW_ALTERNATE') {
+    const tgt = alternateOf(s);
+    if (!tgt) return clueReject(s, out, 'There is no other history to follow from here.');
+    markExamined(s, obj);
+    return retraceTo(s, tgt, out, TUNING.ALT_COST, 'You step back to the fork and follow the other history. What you learned comes with you.');
+  }
   if (action === 'GATHER') {
     const t = s.player.taken;
     if ((obj === 'woodpile' ? t.wood : t.plank) >= TUNING.PILE) return clueReject(s, out, 'The pile is picked clean.');
@@ -357,6 +379,15 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     const m = v.tuneMotif;
     if (m.length >= 2 && m[m.length - 1] === m[m.length - 2] && v.examined.includes('stones')) out.push({ type: 'WORLD_CHANGED', objectId: 'stones', text: 'The same tone again, and the stones hum back the same three notes.' });
   }
+  if (obj === 'radio' && (action === 'TUNE' || action === 'HOLD_SIGNAL') && r.outcome === 'A' && !v.contact) {
+    v.contact = true;
+    const la = anchorOf(s, 'LANTERN');
+    if (hasFlag(s, 'player', 'LANTERN_LIT')) la.playerReady = true;
+    out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'A clear tone, and under it a voice that is theirs.' });
+    voice(s, out, 'clear', partnerReport(s), 0);
+    out.push({ type: 'PARTNER_TRACE', objectId: 'radio', text: 'I hear you. ' + partnerReport(s) });
+  }
+  if (action === 'RELIGHT' && r.outcome === 'A') { if (ignition(s, out)) snapPlayer(s, out); }
   if (action === 'HOLD_SIGNAL') sendMessage(s, out, undefined, undefined, r.outcome === 'A' ? 0.92 : 0.25);
   s.turn++;
   partnerTurn(s, out);
@@ -406,7 +437,8 @@ function markAnchor(s: SimulationState, id: AnchorId, out: DomainEvent[], blocke
   const wasReady = a.playerReady;
   if (!a.playerReady) {
     if (id === 'LANTERN') {
-      if (hasFlag(s, 'player', 'LANTERN_LIT')) { a.playerReady = true; clue = 'The marker rings a low note as the lantern burns beside it.'; }
+      if (hasFlag(s, 'player', 'LANTERN_LIT') && v.contact) { a.playerReady = true; clue = 'The marker rings a low note as the lantern burns beside it.'; }
+      else if (hasFlag(s, 'player', 'LANTERN_LIT')) clue = 'The lantern burns, but the marker stays silent. Something on the far bank must carry your voice.';
       else clue = 'The marker stone is silent. The lantern in the clearing is cold; dry fibre or wood could catch.';
     } else if (id === 'GREENHOUSE') {
       if (v.crossed && routeOpen(s, 'player')) { a.playerReady = true; clue = 'You press your palm to the half-carved symbol. It matches the one on the far bank.'; }
@@ -457,7 +489,7 @@ function checkWin(s: SimulationState, out: DomainEvent[]): boolean {
 
 // ---------- Thread messages (information only) ----------
 function clarityNow(s: SimulationState): number {
-  const c = 0.35 + (hasFlag(s, 'player', 'LANTERN_LIT') ? 0.25 : 0) + (hasFlag(s, 'player', 'RADIO_CLEAR') ? 0.25 : 0) - 0.004 * Math.max(0, s.realityDrift - 30);
+  const c = 0.35 + (hasFlag(s, 'player', 'LANTERN_LIT') ? 0.25 : 0) + (hasFlag(s, 'player', 'RADIO_CLEAR') ? 0.25 : 0) - (hasFlag(s, 'player', 'RADIO_SMOKE') ? 0.2 : 0) - 0.004 * Math.max(0, s.realityDrift - 30);
   return Math.max(0.1, Math.min(0.95, c));
 }
 
@@ -504,13 +536,35 @@ function doRetrace(s: SimulationState, target: string, out: DomainEvent[]): bool
     return reject(out, 'To retrace, return to the place where it happened, or to a thread stone.');
   }
   if (!isValidRetrace(s.nodes, s.player.nodeId, target)) return reject(out, 'You can only retrace to an earlier moment on your own path.');
+  return retraceTo(s, target, out, RETRACE_COST, 'You retrace your steps. The Thread strains with the effort. History is kept.');
+}
+
+/** The unchosen sibling of the most recent sluice fork on the player's path. */
+export function alternateOf(s: Readonly<SimulationState>): string | null {
+  let cur: string | null = s.player.nodeId;
+  while (cur) {
+    const n: SimulationState['nodes'][string] = s.nodes[cur];
+    const ev = n.eventInstanceId ? s.events.find(e => e.eventInstanceId === n.eventInstanceId) : undefined;
+    if (ev && ev.templateId === 'tide' && ev.actorId === 'player' && n.parentId) {
+      const sib = ev.childNodeIds.find(c => c !== cur);
+      return sib && isValidRetrace(s.nodes, s.player.nodeId, sib) ? sib : null;
+    }
+    cur = n.parentId;
+  }
+  return null;
+}
+
+function retraceTo(s: SimulationState, target: string, out: DomainEvent[], cost: number, text: string): boolean {
+  const v = s.v2;
+  void v;
   s.turn++;
   addStep(s, { actor: 'player', fromNodeId: s.player.nodeId, toNodeId: target, action: 'RETRACE', cause: 'You walked your own path back.', effect: 'History is kept.' });
   s.player.nodeId = target;
   s.nodes[target].visitState = 'VISITED';
   s.retraceCount++;
-  s.bondStrain += RETRACE_COST;
-  addLog(s, 'You retrace your steps. The Thread strains with the effort. History is kept.', 'system');
+  s.bondStrain += cost;
+  addLog(s, text, 'system');
+  out.push({ type: 'WORLD_CHANGED', objectId: 'tide', text });
   out.push({ type: 'RETRACED', nodeId: target });
   snapPlayer(s, out);
   recompute(s);
@@ -527,9 +581,17 @@ function afterAction(s: SimulationState, out: DomainEvent[], effective: boolean,
   if (tick) {
     v.tick++;
     if (v.calm && v.tick % TUNING.CALM_DECAY_EVERY === 0) v.calm = Math.max(0, v.calm - 1);
-    if (v.tick % TUNING.WOOD_RESTOCK_EVERY === 0) { s.player.taken.wood = Math.max(0, s.player.taken.wood - 1); s.partner.taken.wood = Math.max(0, s.partner.taken.wood - 1); }
+    if (v.tick % TUNING.WOOD_RESTOCK_EVERY === 0) { s.player.taken.wood = Math.max(0, s.player.taken.wood - 1); s.player.taken.plank = Math.max(0, s.player.taken.plank - 1); s.partner.taken.wood = Math.max(0, s.partner.taken.wood - 1); }
     if (v.tick % TUNING.STRAIN_DECAY_EVERY === 0) s.bondStrain = Math.max(0, s.bondStrain - 1);
+    if (v.tick % TUNING.WEATHER_EVERY === 0 && worldTick(s, out)) snapPlayer(s, out);
     if (!effective && v.tick % TUNING.PARTNER_PERIOD === 0 && !s.won) { s.turn++; partnerTurn(s, out); }
+  }
+  if (!v.examined.includes('seen_inscription') && Math.max(Math.abs(OBJECT_TILES.inscription.tx - v.gridX), Math.abs(OBJECT_TILES.inscription.ty - v.gridY)) <= 4) {
+    const nn = nodeOf(s, 'player');
+    if (!getReachableObjects(nn.world, nn.flags, { tx: v.gridX, ty: v.gridY }, v.realm).includes('inscription')) {
+      v.examined.push('seen_inscription');
+      out.push({ type: 'WORLD_CHANGED', objectId: 'inscription', text: 'Across the water, something is carved into a stone.' });
+    }
   }
   // idle = no real progress (a fork resolved by either side, an anchor earned, a technique learned, the far bank reached)
   const sig = `${s.events.length}|${s.anchors.filter(a => a.playerReady).length}${s.anchors.filter(a => a.partnerReady).length}|${v.learned.length}|${v.crossed ? 1 : 0}`;

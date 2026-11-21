@@ -72,7 +72,8 @@ export function calculateDrift(s: SimulationState): number {
   const mismatch = KEY_FACTS.filter(f => f(s, 'player') !== f(s, 'partner')).length * TUNING.DRIFT_MISMATCH;
   const water = Math.abs(nodeOf(s, 'player').world.water - nodeOf(s, 'partner').world.water) * TUNING.DRIFT_WATER;
   const aligned = s.anchors.filter(a => a.aligned).length * TUNING.DRIFT_ANCHOR;
-  return clamp100(lin + mismatch + water - aligned - (s.v2.calm ?? 0));
+  const fire = hasFlag(s, 'player', 'FIRE_SPREAD') ? TUNING.FIRE_DRIFT + (hasFlag(s, 'player', 'PROPAGATED') ? TUNING.PROPAGATE_DRIFT : 0) : 0;
+  return clamp100(lin + mismatch + water + fire - aligned - (s.v2.calm ?? 0));
 }
 
 export function refreshAnchors(s: SimulationState): void {

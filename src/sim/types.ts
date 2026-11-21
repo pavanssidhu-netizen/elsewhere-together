@@ -12,7 +12,7 @@ export type AnchorId = 'LANTERN' | 'GREENHOUSE' | 'LIGHTHOUSE';
 export type AnchorKind = 'HEAR' | 'FIND' | 'MEET';
 export type PhysicalAction =
   | 'RELIGHT' | 'BRACE' | 'OPEN_SLUICE' | 'PROTECT' | 'HARVEST' | 'TUNE' | 'HOLD_SIGNAL' | 'OBSERVE' | 'BEACON'
-  | 'GATHER' | 'REST';
+  | 'GATHER' | 'REST' | 'DIVERT_WATER' | 'READ' | 'FOLLOW_ALTERNATE';
 export type LinkState = 'CONNECTED' | 'FRAYING' | 'LAST_SIGNAL' | 'FADED';
 
 export type Stats = Record<WorldStat, number> & { instability: number };
@@ -93,6 +93,7 @@ export interface ActorState {
   priority?: Site | null;   // a site the player told it about
   lastSeenMsg?: number;     // index into messages
   refusals?: number;
+  plan?: string;            // partner: current plan key (plan changes emit a trace)
 }
 
 export interface AnchorState {
@@ -169,6 +170,7 @@ export interface V2State {
   learned: string[];            // techniques the player has learned (can be sent as TECHNIQUE)
   shared: string[];             // techniques already sent
   lastRecoveryTick: number;
+  contact?: boolean;            // radio contact made (information; survives retrace)
 }
 
 export type Command =

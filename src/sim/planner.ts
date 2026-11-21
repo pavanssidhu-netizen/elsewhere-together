@@ -1,7 +1,7 @@
 // Observation-based planning for bots, the demo button and hints. Acts only through legal commands (MOVE / INTERACT / CALL / ADVANCE_PARTNER).
 // objectiveHint() reads only what the player can see: own world, inventory, own anchor markers, partner voice lines. No hidden stats.
 import type { Command, PhysicalAction, SimulationState, ThreadMessage } from './types';
-import { SimEngine } from './engine';
+import { SimEngine, alternateOf } from './engine';
 import { getWalkability, pathTo } from '../world/topology';
 import { TUNING } from './tuning';
 
@@ -56,6 +56,29 @@ export function safePlace(s: S): string | null {
   return null;
 }
 
+/** Knowledge puzzle: frequency from the carving, power from the turning wheel, voice through the radio. */
+function puzzleHint(s: S): Hint {
+  const knows = (s.player.knowledge ?? []).includes('KNOWS_FREQUENCY');
+  const diverted = has(s, 'WATER_DIVERTED');
+  const n = s.nodes[s.player.nodeId];
+  const sibling = alternateOf(s);
+  if (!knows) {
+    if (!diverted) return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'DIVERT_WATER' : 'OBSERVE', text: 'The wheel turns, and something is carved across the water. Lowering the stream might bare a way.' };
+    return { objectId: 'inscription', action: 'READ', text: 'The sand path is bare. The carving waits at its end.' };
+  }
+  if (!has(s, 'WHEEL_TURNING') || has(s, 'RADIO_SMOKE')) {
+    if (sibling) return { objectId: 'tide', action: 'FOLLOW_ALTERNATE', text: 'The wheel hangs still, so the radio is dead. At the sluice, the other history still has it turning.' };
+    return { objectId: 'tide', action: 'WAIT', text: 'The radio is dead. Wait for the weather to turn.' };
+  }
+  const routeOpen = !has(s, 'BRIDGE_CLOSED') || n.world.water <= 1;
+  if (!routeOpen) {
+    if (s.player.inventory.plank < 2 && s.player.taken.plank < TUNING.PILE) return { objectId: 'planks', action: 'GATHER', text: 'The span is missing boards. Planks lie along the path.' };
+    if (s.player.inventory.plank < 1) return { objectId: 'planks', action: 'WAIT', text: 'The planks are gone. The tide leaves more in time.' };
+    return { objectId: 'bridge', action: 'BRACE', text: 'The way to the radio is across the bridge.' };
+  }
+  return { objectId: 'radio', action: s.v2.examined.includes('radio') ? 'TUNE' : 'OBSERVE', text: 'The wheel turns. Try the carved frequency on the radio.' };
+}
+
 export function objectiveHint(s: S, opts: { skipCalls?: boolean } = {}): Hint {
   const callOk = !opts.skipCalls;
   const inv = s.player.inventory;
@@ -79,10 +102,13 @@ export function objectiveHint(s: S, opts: { skipCalls?: boolean } = {}): Hint {
   }
   // 2. HEAR
   if (!lit && inv.fuel >= 1) return { objectId: 'lantern', action: s.v2.examined.includes('lantern') ? 'RELIGHT' : 'OBSERVE', text: 'You have fuel. The lantern could catch.' };
-  if (lit && !anchor(s, 'LANTERN').playerReady) return { objectId: 'anchor_LANTERN', action: 'OBSERVE', text: 'The lantern burns. The marker stone by the road should answer.' };
+  if (lit && !anchor(s, 'LANTERN').playerReady) {
+    if (s.v2.contact) return { objectId: 'anchor_LANTERN', action: 'OBSERVE', text: 'The lantern burns. The marker stone by the road should answer.' };
+    return puzzleHint(s);
+  }
   // 3. the water
   if (!coast) {
-    return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'OPEN_SLUICE' : 'OBSERVE', text: 'The ford and the sand path lie under water. The sluice gate could lower the stream.' };
+    return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'DIVERT_WATER' : 'OBSERVE', text: 'The ford and the sand path lie under water. The sluice gate could lower the stream.' };
   }
   // 4. tell them what worked
   if (callOk && learned.includes('open_sluice') && !s.v2.shared.includes('open_sluice') && inv.fuel >= 1) {

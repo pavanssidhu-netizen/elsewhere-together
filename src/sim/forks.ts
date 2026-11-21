@@ -20,8 +20,8 @@ export const TEMPLATES: EventTemplate[] = [
     { id: 'A', text: 'The seedlings straighten and open.', delta: { growth: 2 }, flags: ['GARDEN_GROWN'] },
     { id: 'B', text: 'The seedlings droop in the damp.', delta: {}, flags: ['GARDEN_STUNTED'] } ] },
   { id: 'tide', label: 'The Sluice', triggerObjectId: 'tide', outcomes: [
-    { id: 'A', text: 'The gate grinds open. The water drops.', delta: {}, set: { water: 1 }, flags: ['COAST_OPEN'], remove: ['COAST_CLOSED'] },
-    { id: 'B', text: 'The gate jams. The stream rises over its banks.', delta: {}, set: { water: 3 }, flags: ['COAST_CLOSED'] } ] },
+    { id: 'A', text: 'The gate grinds open. The water drops.', delta: {}, set: { water: 1 }, flags: ['COAST_OPEN', 'WATER_DIVERTED', 'WHEEL_STOPPED', 'DRY'], remove: ['COAST_CLOSED', 'WHEEL_TURNING'] },
+    { id: 'B', text: 'The gate jams. The stream rises over its banks.', delta: {}, set: { water: 3 }, flags: ['COAST_CLOSED', 'WHEEL_TURNING'], remove: ['WATER_DIVERTED', 'WHEEL_STOPPED', 'DRY'] } ] },
 ];
 export const TEMPLATE_BY_ID: Record<string, EventTemplate> = Object.fromEntries(TEMPLATES.map(t => [t.id, t]));
 
@@ -41,6 +41,14 @@ const w = (c: Ctx) => nodeOf(c.s, c.who).world;
 const f = (c: Ctx, flag: string) => hasFlag(c.s, c.who, flag);
 const inv = (c: Ctx) => actorOf(c.s, c.who).inventory;
 const you = (c: Ctx) => (c.who === 'player' ? 'your' : 'its');
+
+const radioBlock = (c: Ctx): string | null => {
+  if (c.who !== 'player') return null;
+  if (!f(c, 'WHEEL_TURNING')) return 'The radio is dead. The waterwheel that feeds it has stopped.';
+  if (f(c, 'RADIO_SMOKE')) return 'Smoke hangs over the set. Only a hiss comes through.';
+  if (!(c.s.player.knowledge ?? []).includes('KNOWS_FREQUENCY')) return "Static on every band. You'd need the right frequency.";
+  return null;
+};
 
 export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
   RELIGHT: {
@@ -95,18 +103,24 @@ export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
   },
   TUNE: {
     action: 'TUNE', template: 'radio', object: 'radio', site: 'TOWER',
-    blocked: () => null,
-    pA: c => clamp(0.4 + (f(c, 'LANTERN_LIT') ? 0.2 : 0) + (c.prepared ? 0.15 : 0) - 0.003 * Math.max(0, c.s.realityDrift - 30), 0.1, 0.9),
+    blocked: radioBlock,
+    pA: c => clamp(0.4 + (c.who === 'player' ? 0.25 : 0) + (f(c, 'LANTERN_LIT') ? 0.2 : 0) + (c.prepared ? 0.15 : 0) - 0.003 * Math.max(0, c.s.realityDrift - 30), 0.1, 0.9),
     A: {}, B: {}, signal: ['one steady tone', 'a smear of static'],
   },
   HOLD_SIGNAL: {
     action: 'HOLD_SIGNAL', template: 'radio', object: 'radio', site: 'TOWER',
-    blocked: c => inv(c).fuel < 1 ? 'The set needs warmth to hold a signal. There is no fuel left to feed the lantern.' : null,
+    blocked: c => radioBlock(c) ?? (inv(c).fuel < 1 ? 'The set needs warmth to hold a signal. There is no fuel left to feed the lantern.' : null),
     pA: c => clamp(0.35 + (f(c, 'RADIO_CLEAR') ? 0.3 : 0) + (f(c, 'LANTERN_LIT') ? 0.1 : 0) + (c.prepared ? 0.1 : 0) - 0.003 * Math.max(0, c.s.realityDrift - 30), 0.1, 0.9),
     A: { text: 'The tone holds, and your voice carries clear.' },
     B: { text: 'The tone wavers. Your voice breaks into pieces.' },
     signal: ['a clear voice', 'a broken voice'],
   },
+};
+SPECS.DIVERT_WATER = {
+  ...SPECS.OPEN_SLUICE!, action: 'DIVERT_WATER',
+  blocked: c => f(c, 'WATER_DIVERTED') && w(c).water <= 1 ? 'The water is already diverted.' : null,
+  A: { text: 'The gate grinds across. The channel empties and the waterwheel slows to a stop. The ford and the sand path surface.' },
+  B: { text: 'The gate jams. The stream rises over its banks and the waterwheel keeps turning.' },
 };
 void you;
 
@@ -182,7 +196,7 @@ export function runFork(s: SimulationState, who: ActorId, action: PhysicalAction
   const rec: EventRecord = {
     eventInstanceId: evId, templateId: t.id, actorId: who, parentNodeId: parent.id, childNodeIds: ids,
     activeChildNodeId: active, selectedOutcome: sel, choice: 'LET_GO', effects: { ...effects[sel === 'A' ? 0 : 1] },
-    reason: `${who === 'player' ? 'You' : 'Your partner'} tried to ${action.toLowerCase().replace(/_/g, ' ')} at the ${object.replace('anchor_', '').toLowerCase()}${c(prepared)}. ${chosen.text}`,
+    reason: `${because(s, who, action)}${who === 'player' ? 'You' : 'Your partner'} tried to ${action.toLowerCase().replace(/_/g, ' ')} at the ${object.replace('anchor_', '').toLowerCase()}${c(prepared)}. ${chosen.text}`,
     paid: paidParts.length ? paidParts.join('; ') + '.' : 'No local material was spent.',
     driftAfter: 0, strainAfter: 0, turnNumber: s.turn,
     sourceObject: object, priorState: prior, playerAction: action, outcomeA: outs[0].text, outcomeB: outs[1].text,
@@ -204,3 +218,12 @@ export function runFork(s: SimulationState, who: ActorId, action: PhysicalAction
   return { ok: true, record: rec, outcome: sel };
 }
 const c = (prepared: boolean) => (prepared ? ', having looked it over first' : '');
+
+/** Names the prior condition that shaped this attempt (causal record). */
+function because(s: SimulationState, who: ActorId, action: PhysicalAction): string {
+  if (action === 'RELIGHT' && hasFlag(s, who, 'DRY')) return 'Because the river was diverted, the undergrowth was dry. ';
+  if (action === 'RELIGHT') return 'The undergrowth was damp. ';
+  if (action === 'TUNE' || action === 'HOLD_SIGNAL') return who === 'player' && (s.player.knowledge ?? []).includes('KNOWS_FREQUENCY') ? 'Because the waterwheel was turning and you knew the frequency, ' : '';
+  if (action === 'DIVERT_WATER' || action === 'OPEN_SLUICE') return 'The sluice was worked while the stream ran high. ';
+  return '';
+}

@@ -7,6 +7,21 @@ import { addHistory, addLog, addStep, anchorOf, coastOpen, hasFlag, nodeOf, reco
 import { runFork } from './forks';
 
 const P = (s: SimulationState) => s.partner;
+const LANDMARK: Record<Site, string> = { CLEARING: 'lantern', CROSSING: 'bridge', GARDEN: 'greenhouse', TOWER: 'radio', BEACON: 'anchor_LIGHTHOUSE' };
+const SITE_NAME: Record<Site, string> = { CLEARING: 'clearing', CROSSING: 'crossing', GARDEN: 'garden', TOWER: 'far bank', BEACON: 'lookout' };
+/** First-person line for a partner action that shows nothing physical by itself. */
+function defaultTrace(s: SimulationState, action: string, text: string): { text: string; objectId: string } {
+  const site = P(s).site!;
+  const objectId = LANDMARK[site];
+  const n = SITE_NAME[site];
+  if (action === 'TRAVEL') return { objectId, text: site === 'CROSSING' && !routeOpen(s, 'partner') ? "I've reached the crossing. Mine is still flooded." : `I've reached the ${n}.` };
+  if (action === 'REFUSE') return { objectId, text: "I can't take that in right now. I'm steadying myself." };
+  if (action === 'LEARN') return { objectId, text: "I think I understand. I'll try it on my side." };
+  if (action === 'REST') return { objectId, text: `I'm resting at the ${n} until the Thread settles.` };
+  if (action === 'GATHER') return { objectId, text: 'I have wood, or planks, in hand now.' };
+  if (action === 'WAIT') return { objectId, text: `I'm at the ${n}, waiting. ${text.replace(/\.$/, '')}.` };
+  return { objectId, text: `At the ${n}: ${text.charAt(0).toLowerCase()}${text.slice(1)}` };
+}
 
 export function isEndangered(s: SimulationState): boolean {
   return s.bondStrain >= TUNING.PARTNER_REFUSE_STRAIN || nodeOf(s, 'partner').world.instability >= 40;
@@ -88,7 +103,8 @@ function record(s: SimulationState, out: DomainEvent[], goal: Goal, action: stri
   addStep(s, { actor: 'partner', fromNodeId: p.nodeId, toNodeId: p.nodeId, action: action === 'TRAVEL' ? 'TRAVEL' : action === 'WAIT' ? 'WAIT' : action === 'REFUSE' ? 'REFUSE' : action === 'LEARN' ? 'LEARN' : action === 'REST' ? 'STABILISE' : 'ACT', cause: text });
   out.push({ type: 'PARTNER_ACTED', goal, text });
   addLog(s, text, 'partner');
-  if (trace) out.push({ type: 'PARTNER_TRACE', text: trace.text, objectId: trace.objectId });
+  const tr = trace ?? defaultTrace(s, action, text);
+  out.push({ type: 'PARTNER_TRACE', text: tr.text, objectId: tr.objectId });
 }
 
 /** Handle new player messages: learn only if understood, refuse if endangered. Returns true if it used its action. */
@@ -173,7 +189,7 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], opts: { resp
     const st = stepFor(s, id);
     if ('blocked' in st) { blockedMsg = blockedMsg || st.blocked; continue; }
     if (st.action === 'WAIT') { blockedMsg = blockedMsg || (st.why ?? ''); continue; }
-    if (do_(s, out, goal, st)) { p.stuck = 0; recompute(s); return; }
+    if (do_(s, out, goal, st)) { p.stuck = 0; notePlan(s, out, id, blockedMsg); recompute(s); return; }
   }
   // nothing possible: wait, and occasionally work something out by trial
   p.stuck = (p.stuck ?? 0) + 1;
@@ -182,9 +198,24 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], opts: { resp
     record(s, out, 'REACH_NEXT_SITE', 'LEARN', 'Works out by trial that the sluice gate can be opened.');
   } else {
     const t = blockedMsg || 'Waits at the lookout for the other side to answer.';
+    notePlan(s, out, 'WAIT', blockedMsg);
     record(s, out, goal, 'WAIT', t);
   }
   recompute(s);
+}
+
+/** A visible change of plan: the partner struggles, says so, and tries something else. */
+function notePlan(s: SimulationState, out: DomainEvent[], plan: string, blocked: string): void {
+  const p = P(s);
+  const prev = p.plan;
+  p.plan = plan;
+  if (!prev || prev === plan) return;
+  const objectId = /river|cross|plank/.test(blocked) ? 'bridge' : /sand|sluice/.test(blocked) ? 'tide' : LANDMARK[p.site!];
+  const text = plan === 'WAIT'
+    ? `That way is shut to me${blocked ? ': ' + blocked.charAt(0).toLowerCase() + blocked.slice(1) : '.'} I'll wait and look for another way.`
+    : `I couldn't get through${blocked ? ' (' + blocked.replace(/\.$/, '').toLowerCase() + ')' : ''}. I'm changing plan and heading for the ${plan.toLowerCase()} instead.`;
+  out.push({ type: 'PARTNER_TRACE', text, objectId });
+  addLog(s, text, 'partner');
 }
 
 function do_(s: SimulationState, out: DomainEvent[], goal: Goal, st: Step): boolean {

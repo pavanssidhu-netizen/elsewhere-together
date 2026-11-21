@@ -40,17 +40,24 @@ export const OBJECT_TILES: Record<string, GridCell> = {
   // V3 additions (ids/coords of the above are stable)
   planks: cell(7, 7),      // plank pile, east bank, near the crossing
   woodpile: cell(8, 2),    // dry wood by the trees
+  // V4
+  wheel: cell(9, 8),       // waterwheel beside the sluice, on the river
+  inscription: cell(13, 8), // carved stone on the sand path: only reachable when the water is diverted
 };
 
 export const PLAYER_START_TILE: GridCell = cell(7, 5);
 
+/** Garden route tiles blocked while smoke hangs over the garden (a detour via the south road stays open). */
+export const SMOKE_TILES: GridCell[] = [cell(12, 3), cell(12, 4)];
 const SOLID = new Set(['#', '~', 'F', 'G', 'H']);
 
 export function getWalkability(world: Stats, flags: string[], realm: Realm = 'TOWN'): boolean[][] {
   const bridgeOk = realm === 'ALIEN' || !flags.includes('BRIDGE_CLOSED');
   const fordOk = realm === 'ALIEN' || world.water <= 1;
   const sandOk = flags.includes('COAST_OPEN') && world.water <= 2;
-  return MAP_ROWS.map(row => [...row].map(ch => {
+  const smoke = flags.includes('SMOKE');
+  return MAP_ROWS.map((row, ty) => [...row].map((ch, tx) => {
+    if (smoke && SMOKE_TILES.some(c => c.tx === tx && c.ty === ty)) return false;
     if (ch === 'b') return bridgeOk;
     if (ch === 'f') return fordOk;
     if (ch === 'S') return sandOk;
@@ -126,7 +133,7 @@ export const OBJECT_SITE: Record<string, Site> = {
   bridge: 'CROSSING', tide: 'CROSSING', planks: 'CROSSING',
   greenhouse: 'GARDEN', anchor_GREENHOUSE: 'GARDEN',
   radio: 'TOWER', stones: 'TOWER', thread_terminal: 'TOWER',
-  anchor_LIGHTHOUSE: 'BEACON',
+  anchor_LIGHTHOUSE: 'BEACON', wheel: 'CROSSING', inscription: 'BEACON',
 };
 /** The river runs down column 5; tiles with tx <= 4 are the far (west) bank. */
 export const isWestBank = (tx: number): boolean => tx <= 4;

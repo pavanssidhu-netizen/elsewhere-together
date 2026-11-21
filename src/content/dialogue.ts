@@ -35,6 +35,8 @@ export const INTRO: Record<string, string> = {
   anchor_GREENHOUSE: 'A marker stone by the garden, carved half a thread. The other half is across the river.',
   anchor_LIGHTHOUSE: 'The lookout. An iron bowl waits on top, unlit.',
   stones: 'Old echo stones. They hum a three-note motif when the radio is tuned.',
+  wheel: 'A waterwheel beside the sluice. It feeds a cable that runs toward the radio.',
+  inscription: 'A carved stone on the sand path, worn smooth by tides.',
   planks: 'A pile of weathered planks.',
   woodpile: 'A stack of dry wood under the trees.',
 };

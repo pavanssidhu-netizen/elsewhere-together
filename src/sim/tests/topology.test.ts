@@ -17,7 +17,7 @@ describe('topology', () => {
   it('initially everything but the lighthouse is reachable', () => {
     const r = getReachableObjects(W(), [], PLAYER_START_TILE);
     for (const id of Object.keys(OBJECT_TILES)) {
-      if (id === 'anchor_LIGHTHOUSE') expect(r).not.toContain(id); else expect(r).toContain(id);
+      if (id === 'anchor_LIGHTHOUSE' || id === 'inscription') expect(r).not.toContain(id); else expect(r).toContain(id);
     }
   });
   it('coast opens only with COAST_OPEN and water<=2', () => {
