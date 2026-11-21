@@ -310,20 +310,16 @@ export class ScribbleFx {
   }
 
   /** Verb prompt bubble anchored to the focused object. */
-  prompt(focusId: string | null, tx: number, ty: number, flapT: number): void {
+  prompt(focusId: string | null, tx: number, ty: number, flapT: number /* tx,ty = player pixel position */): void {
     this.bubbleG.clear();
     if (!focusId) { this.bubble.setVisible(false); return; }
     const fork = FORK_OBJECTS.has(focusId);
     const label = OBJECT_LABELS[focusId] ?? focusId;
-    const verbs = fork ? 'E keep    Q send across    F let it be' : 'E use';
+    const verbs = fork ? 'E keep   Q send across   F let it be' : 'E use';
     this.bubble.setText(`${label}\n${verbs}`).setVisible(true);
-    const bw = Math.max(this.bubble.width, 30) / 5 * 5 / 1, bh = this.bubble.height;
-    const w = this.bubble.displayWidth + 6, h = this.bubble.displayHeight + 4;
-    void bw; void bh;
-    const o = OBJECT_TILES[focusId];
-    const cxp = Phaser.Math.Clamp(o.tx * TILE + 8, w / 2 + 2, 320 - w / 2 - 2);
-    const top = Math.max(h + 2, o.ty * TILE - (focusId === 'radio' || focusId === 'anchor_LIGHTHOUSE' ? 24 : 6) + Math.sin(flapT * 3) * 0.6);
-    const y = Math.min(top, 176);
+        const w = this.bubble.displayWidth + 6, h = this.bubble.displayHeight + 4;
+    const cxp = Phaser.Math.Clamp(tx, w / 2 + 2, 320 - w / 2 - 2);
+    const y = Math.max(h + 2, Math.min(176, ty - 17 + Math.sin(flapT * 3) * 0.5)); // above the player's head
     this.bubble.setPosition(cxp, y - 2);
     const g = this.bubbleG;
     g.fillStyle(0xfffaf0, 0.96); g.fillRoundedRect(cxp - w / 2, y - h, w, h, 1.6);
@@ -331,7 +327,6 @@ export class ScribbleFx {
     g.fillStyle(0xfffaf0, 0.96); g.fillTriangle(cxp - 1.6, y, cxp + 1.6, y, cxp, y + 2.6);
     g.lineStyle(0.6, SK.graphite, 1); g.lineBetween(cxp - 1.6, y, cxp, y + 2.6); g.lineBetween(cxp + 1.6, y, cxp, y + 2.6);
     g.fillStyle(SK.amber, 1); g.fillCircle(cxp - w / 2 + 2.2, y - h + 2.4, 0.9);
-    void tx; void ty;
   }
 
   label(show: boolean, x: number, y: number, a: number, text = 'VARIANT / ECHO'): void {

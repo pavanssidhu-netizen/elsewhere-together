@@ -118,3 +118,15 @@ Other knobs: `INK_SCALE` (`artStyle.ts`, 4; texture and canvas scale, 3 is light
 - Ink textures are LINEAR filtered; this is seam-free because sprites/tiles are placed on whole logical pixels (4 hi-res px).
 - Switching style reloads the page.
 - The agent that built this had no image viewer. Layout, contrast and structure were checked with programmatic tests (e2e, bounding boxes, colour-class dumps of the screenshots), not by eye; a human pass on the screenshots is still needed.
+
+## SCRIBBLE (V2 default)
+
+Graphite sketch on warm paper (`?style=scribble`, the default; cycle order SCRIBBLE -> PIXEL -> INK -> INK-LIGHT, list exported as `ART_STYLES` in `src/game/artStyle.ts`).
+
+- Ground, trees, plants, puddle, bridge, path, chest and campfire art come from the **Kenney "Scribble Dungeons"** pack (public/assets/scribble). **Credit: Kenney (kenney.nl), licence CC0 1.0** (see `public/assets/scribble/LICENSE_Kenney_CC0.txt`).
+- The PNGs are 64px, shown 1:1 on a 1280x720 canvas (logical 320x180 grid, camera zoom 4) with smooth (linear) filtering, so strokes are never nearest-neighbour scaled.
+- Landmarks are mapped to tiles/procedural ink: old lamp (post + lantern, campfire sprite when lit), nursery (3x2 glasshouse, `plants` sprites alive / drooping stalks withered, `puddle` when flooded), signal mast (lattice + cyan arcs, red X when dead), tidal gate (posts, planks, gauge), echo stones (menhirs, pink glyph once examined), thread terminal (`chest` sprite), lighthouse (striped tower, amber lamp + beam), anchors (dashed ground sigils; amber half = you ready, cyan half = partner ready, both = aligned glow).
+- State-dependent: bridge intact/broken (from the node's BRIDGE_CLOSED flag), ford stones visible only when walkable, sand path flooded exactly where topology marks it unwalkable, withered/alive nursery, lit/dark lamp.
+- Accents: amber / cyan only for the two beings, lit lamp, anchors and thread; dusty pink for echoes and branch bloom.
+- ALIEN realm: inverted paper (dark violet, pale strokes made at load time from the same PNGs), overgrowth sprites on most open tiles, drifting spores.
+- Dev harness: `/shots.html` + `node e2e/scribble-shots.mjs` (screenshots into docs/shots/v2/).

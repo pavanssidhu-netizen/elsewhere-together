@@ -371,7 +371,7 @@ export class WorldScene extends Phaser.Scene {
       g.lineStyle(1.1, SK.amber, 0.9); g.beginPath(); g.arc(ax + (bx - ax) / 2, cym - 4, (bx - ax) / 2, Math.PI, Math.PI * (1 + Math.min(1, ending / 2.5)), false); g.strokePath();
       this.fx.figure(g, ax, cym + 4, col, 1, 0, 1, false, alien); this.fx.figure(g, bx, cym + 4, otherColour(idn), -1, 0, 1, false, alien);
     }
-    this.fx.prompt(ending < 0 ? this.focusId : null, this.tile.tx, this.tile.ty, t);
+    this.fx.prompt(ending < 0 ? this.focusId : null, this.px, this.py + 4, t);
   }
 
   private drawDynamic(time: number, dt: number, s: Readonly<SimulationState>): void {
