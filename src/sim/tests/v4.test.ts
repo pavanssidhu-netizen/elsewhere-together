@@ -35,13 +35,13 @@ describe('V4', () => {
   });
 
   it('B spiral: divert + fire ends in FADE with causal reasons', () => {
-    const { s } = run(proofScripts.B);
+    const { s } = run(proofScripts.B, 5);
     expect(s.phase).toBe('FADE');
     const ign = s.events.find(x => x.templateId === 'ignition')!;
     expect(ign).toBeTruthy();
     expect(ign.reason).toMatch(/^Because the river was diverted/);
     expect(s.events.every(x => x.reason.length > 0)).toBe(true);
-    expect(s.events.some(x => x.templateId === 'propagation' || x.templateId === 'rain')).toBe(true);
+    expect(s.events.some(x => x.templateId === 'ignition' && x.selectedOutcome === 'A')).toBe(true); // the fire really spread
   });
 
   it('C recovery: cascade, follow alternate, then win', () => {

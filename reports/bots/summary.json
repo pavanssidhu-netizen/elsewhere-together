@@ -5,14 +5,15 @@
     "fade": 0,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 95,
-    "medianInteractions": 24,
+    "medianTicks": 63,
+    "medianInteractions": 20,
     "avgCalls": 1,
     "secretRate": 0,
-    "maxDrift": 69,
+    "maxDrift": 72,
     "maxStrain": 63,
     "winningAnchorOrders": [
-      "LGL"
+      "LGLL",
+      "LLGL"
     ],
     "winningStrategies": 4,
     "winSeedSample": [
@@ -26,128 +27,130 @@
   "guided_novice": {
     "seeds": 100,
     "win": 98,
-    "fade": 2,
-    "timeout": 0,
-    "timeoutWithNextStep": 0,
-    "medianTicks": 223,
-    "medianInteractions": 42,
-    "avgCalls": 1.1,
+    "fade": 1,
+    "timeout": 1,
+    "timeoutWithNextStep": 1,
+    "medianTicks": 129,
+    "medianInteractions": 27,
+    "avgCalls": 1.2,
     "secretRate": 0,
-    "maxDrift": 75,
-    "maxStrain": 42,
+    "maxDrift": 65,
+    "maxStrain": 39,
     "winningAnchorOrders": [
-      "LGL",
-      "LLG"
+      "LGLL",
+      "LLGL"
     ],
-    "winningStrategies": 16,
+    "winningStrategies": 17,
     "winSeedSample": [
       1,
       2,
       3
     ],
     "fadeSeedSample": [
-      7,
-      59
+      70
     ],
-    "timeoutSeedSample": []
+    "timeoutSeedSample": [
+      7
+    ]
   },
   "mostly_calls": {
     "seeds": 100,
-    "win": 0,
-    "fade": 100,
-    "timeout": 0,
-    "timeoutWithNextStep": 0,
-    "medianTicks": 196,
-    "medianInteractions": 11,
-    "avgCalls": 9,
+    "win": 1,
+    "fade": 12,
+    "timeout": 87,
+    "timeoutWithNextStep": 87,
+    "medianTicks": 700,
+    "medianInteractions": 34,
+    "avgCalls": 23.2,
     "secretRate": 0,
-    "maxDrift": 53,
-    "maxStrain": 76,
-    "winningAnchorOrders": [],
-    "winningStrategies": 0,
-    "winSeedSample": [],
+    "maxDrift": 59,
+    "maxStrain": 78,
+    "winningAnchorOrders": [
+      "LLGL"
+    ],
+    "winningStrategies": 1,
+    "winSeedSample": [
+      89
+    ],
     "fadeSeedSample": [
       1,
-      2,
-      3
+      10,
+      21
     ],
-    "timeoutSeedSample": []
+    "timeoutSeedSample": [
+      2,
+      3,
+      4
+    ]
   },
   "cautious_self": {
     "seeds": 100,
-    "win": 81,
-    "fade": 19,
-    "timeout": 0,
-    "timeoutWithNextStep": 0,
-    "medianTicks": 164,
-    "medianInteractions": 23,
+    "win": 0,
+    "fade": 0,
+    "timeout": 100,
+    "timeoutWithNextStep": 100,
+    "medianTicks": 700,
+    "medianInteractions": 19,
     "avgCalls": 0,
     "secretRate": 0,
-    "maxDrift": 69,
+    "maxDrift": 72,
     "maxStrain": 25,
-    "winningAnchorOrders": [
-      "LGL"
-    ],
-    "winningStrategies": 4,
-    "winSeedSample": [
+    "winningAnchorOrders": [],
+    "winningStrategies": 0,
+    "winSeedSample": [],
+    "fadeSeedSample": [],
+    "timeoutSeedSample": [
       1,
-      3,
-      4
-    ],
-    "fadeSeedSample": [
       2,
-      10,
-      12
-    ],
-    "timeoutSeedSample": []
+      3
+    ]
   },
   "random_interactor": {
     "seeds": 100,
     "win": 0,
-    "fade": 97,
-    "timeout": 3,
-    "timeoutWithNextStep": 3,
-    "medianTicks": 310,
-    "medianInteractions": 49,
-    "avgCalls": 2.4,
+    "fade": 2,
+    "timeout": 98,
+    "timeoutWithNextStep": 98,
+    "medianTicks": 700,
+    "medianInteractions": 107,
+    "avgCalls": 5.5,
     "secretRate": 0,
-    "maxDrift": 63,
-    "maxStrain": 54,
+    "maxDrift": 57,
+    "maxStrain": 64,
     "winningAnchorOrders": [],
     "winningStrategies": 0,
     "winSeedSample": [],
     "fadeSeedSample": [
+      85,
+      92
+    ],
+    "timeoutSeedSample": [
       1,
       2,
       3
-    ],
-    "timeoutSeedSample": [
-      13,
-      14,
-      83
     ]
   },
   "reckless": {
     "seeds": 100,
     "win": 0,
-    "fade": 100,
-    "timeout": 0,
-    "timeoutWithNextStep": 0,
-    "medianTicks": 164,
+    "fade": 0,
+    "timeout": 100,
+    "timeoutWithNextStep": 100,
+    "medianTicks": 700,
     "medianInteractions": 4,
     "avgCalls": 4.2,
     "secretRate": 0,
-    "maxDrift": 54,
+    "maxDrift": 51,
     "maxStrain": 40,
     "winningAnchorOrders": [],
     "winningStrategies": 0,
     "winSeedSample": [],
-    "fadeSeedSample": [
+    "fadeSeedSample": [],
+    "timeoutSeedSample": [
       1,
       2,
       3
-    ],
-    "timeoutSeedSample": []
+    ]
   },
   "secret_hunter": {
     "seeds": 100,
@@ -155,14 +158,15 @@
     "fade": 0,
     "timeout": 0,
     "timeoutWithNextStep": 0,
-    "medianTicks": 99,
-    "medianInteractions": 26,
+    "medianTicks": 64,
+    "medianInteractions": 22,
     "avgCalls": 1,
     "secretRate": 100,
-    "maxDrift": 69,
+    "maxDrift": 72,
     "maxStrain": 63,
     "winningAnchorOrders": [
-      "LGL"
+      "LGLL",
+      "LLGL"
     ],
     "winningStrategies": 4,
     "winSeedSample": [

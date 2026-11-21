@@ -155,7 +155,7 @@ function planFrom(state: SimulationState): Command[] {
   const restored = SimEngine.restore(SimEngine.serialize(state));
   if (!restored) return [];
   const clone = new SimEngine(SEED, restored);
-  try { return w(clone, {}) ?? []; } catch { return w(restored) ?? []; }
+  try { return w(clone) ?? []; } catch { return []; }
 }
 
 function startDemo(): void {
@@ -303,7 +303,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (shell.screen === 'play' && !shell.helpOpen()) {
     if (MOVE_KEYS.has(k)) { keys.add(k); e.preventDefault(); return; }
-    if (k === 'e' || k === ' ') { e.preventDefault(); interactSlot(0); return; }
+    lastInputAt = performance.now();
+    if (k === 'c') { if (!e.repeat) callThread(); return; }
+    if (k === 'e' || k === ' ') { e.preventDefault(); if (!e.repeat) interactSlot(0); return; }
     if (k === 'q') { interactSlot(1); return; }
     if (k === 'f') { interactSlot(2); return; }
   }
@@ -325,6 +327,21 @@ document.addEventListener('click', (e) => {
   planWin: () => planFrom(engine.getState() as SimulationState),
   proofs: () => import('./sim/proofs').then(m => m.proofScripts),
 };
+// ---------- V5: the Thread and the partner's own time ----------
+function callThread(): void {
+  if (!canMove()) return;
+  send({ type: 'CALL' });
+}
+(window as any).__etCall = callThread;
+// The partner keeps living while you stand still: one deterministic ADVANCE_PARTNER every 3 s of active, idle play.
+let lastInputAt = 0;
+window.setInterval(() => {
+  const s = engine.getState();
+  if (!canMove() || shell.screen !== 'play' || s.phase !== 'EXPLORING') return;
+  if (keys.size || touchDir.x || touchDir.y || performance.now() - lastInputAt < 1500) return;
+  send({ type: 'ADVANCE_PARTNER' });
+}, 3000);
+
 if (new URLSearchParams(location.search).get('debug') === '1') {
   (window as any).__et.debug = {
     setMeters: (drift: number, strain: number) => {

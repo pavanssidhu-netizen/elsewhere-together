@@ -2,7 +2,7 @@
 import type { VoiceCue } from '../sim/types';
 
 export const VOICE_LINES: Record<VoiceCue, string> = {
-  boot: "I can hear you. I don't know where you are.",
+  boot: "The beacon split. And so did we. I can still hear you. Find a way to light yours; I'll try to light mine.",
   find: "I'll head for the place you named. Keep the light on.",
   safe: "I'm staying here a moment. This side is holding.",
   help: "I can try what you described. Give me a moment.",
@@ -25,16 +25,16 @@ export const HINTS = {
 
 /** First-touch captions (transient, in-world). */
 export const INTRO: Record<string, string> = {
-  lantern: 'An old lantern in the clearing. Cold, but the glass is whole. It would take fuel.',
+  lantern: 'The beacon. It split when you did. Cold now; it would take fuel.',
   bridge: 'A bridge over the stream. Boards are missing, and the water runs high.',
   radio: 'An old radio on the far bank, humming with something that is not this world.',
   greenhouse: 'A small garden of seedlings. Dry fibre grows here; so does shelter.',
   tide: 'A sluice gate holds the stream back. The ford and the sand path lie under water.',
   thread_terminal: 'A thread stone. Resting here loosens the knot between you.',
-  anchor_LANTERN: 'A marker stone by the road. It rings when a lit lantern stands near.',
+  anchor_LANTERN: 'A marker stone by the road. It points back at the beacon.',
   anchor_GREENHOUSE: 'A marker stone by the garden, carved half a thread. The other half is across the river.',
   anchor_LIGHTHOUSE: 'The lookout. An iron bowl waits on top, unlit.',
-  stones: 'Old echo stones. They hum a three-note motif when the radio is tuned.',
+  stones: 'Old echo stones. Resting here eases the Thread.',
   wheel: 'A waterwheel beside the sluice. It feeds a cable that runs toward the radio.',
   inscription: 'A carved stone on the sand path, worn smooth by tides.',
   planks: 'A pile of weathered planks.',

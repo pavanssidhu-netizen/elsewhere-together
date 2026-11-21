@@ -9,7 +9,7 @@ import { isValidRetrace } from './branches';
 import { SPECS, TEMPLATES, runFork } from './forks';
 import { partnerTurn, partnerReport } from './partner';
 import {
-  addHistory, addLog, addStep, anchorOf, clamp100, evalLink, hasFlag, inDanger, nodeOf, recompute, routeOpen, safeSites, voice,
+  addHistory, addLog, addStep, anchorOf, beaconProgress, clamp100, evalLink, hasFlag, inDanger, nodeOf, recompute, routeOpen, safeSites, voice,
 } from './core';
 import { ALIEN_TEXT, HINTS, INTRO, STONES_TEXT, TERMINAL_TEXT, TOO_FAR, VOICE_LINES } from '../content/dialogue';
 import { objectiveHint, planWin } from './planner';
@@ -31,11 +31,11 @@ export const DEFAULT_ACTION: Record<string, PhysicalAction> = {
 const ALLOWED: Record<string, PhysicalAction[]> = {
   lantern: ['RELIGHT', 'OBSERVE'], bridge: ['BRACE', 'OBSERVE'], radio: ['TUNE', 'HOLD_SIGNAL', 'OBSERVE'],
   greenhouse: ['PROTECT', 'HARVEST', 'REST', 'OBSERVE'], tide: ['DIVERT_WATER', 'FOLLOW_ALTERNATE', 'OPEN_SLUICE', 'OBSERVE'], wheel: ['OBSERVE'], inscription: ['READ', 'OBSERVE'], planks: ['GATHER', 'OBSERVE'],
-  woodpile: ['GATHER', 'OBSERVE'], stones: ['REST', 'OBSERVE', 'TUNE', 'HOLD_SIGNAL'], thread_terminal: ['REST', 'OBSERVE'],
+  woodpile: ['GATHER', 'OBSERVE'], stones: ['REST', 'OBSERVE'], thread_terminal: ['REST', 'OBSERVE'],
   anchor_LANTERN: ['OBSERVE', 'REST'], anchor_GREENHOUSE: ['OBSERVE', 'REST'], anchor_LIGHTHOUSE: ['BEACON', 'OBSERVE'],
 };
 const LABEL: Record<PhysicalAction, string> = {
-  RELIGHT: 'Light the signal fire', DIVERT_WATER: 'Divert the water', FOLLOW_ALTERNATE: 'Follow the other history', READ: 'Read the carving', BRACE: 'Brace the bridge', OPEN_SLUICE: 'Open the sluice', PROTECT: 'Protect the seedlings', HARVEST: 'Harvest dry fibre',
+  RELIGHT: 'Relight the beacon', DIVERT_WATER: 'Divert the water', FOLLOW_ALTERNATE: 'Follow the other history', READ: 'Read the carving', BRACE: 'Brace the bridge', OPEN_SLUICE: 'Open the sluice', PROTECT: 'Protect the seedlings', HARVEST: 'Harvest dry fibre',
   TUNE: 'Tune the radio', HOLD_SIGNAL: 'Hold the signal', OBSERVE: 'Look closely', BEACON: 'Light the beacon', GATHER: 'Gather', REST: 'Rest here',
 };
 
@@ -62,9 +62,9 @@ export function createInitialState(seed: number): SimulationState {
     events: [{
       eventInstanceId: 'E0001', templateId: 'opening', actorId: 'player', parentNodeId: 'root', childNodeIds: ['N0001', 'N0002'],
       activeChildNodeId: 'N0001', selectedOutcome: 'A', choice: 'LET_GO', effects: {},
-      reason: 'A tree fell between the two of them. The pink flash split their histories: you wake in one forest, they in another.',
+      reason: 'The old beacon in the clearing flared and split. Its pink flash split their histories too: you wake in one forest, they in another.',
       paid: 'Nothing yet.', driftAfter: 0, strainAfter: 0, turnNumber: 0,
-      sourceObject: 'old_tree', priorState: 'together', playerAction: 'WITNESS', outcomeA: 'You wake alone.', outcomeB: 'They wake alone.',
+      sourceObject: 'lantern', priorState: 'together', playerAction: 'WITNESS', outcomeA: 'You wake alone.', outcomeB: 'They wake alone.',
       seededRoll: 0, chosenOutcome: 'A', localPhysicalEffect: 'Two independent forests.', evidenceShown: 'The edge of the world flashes pink.',
     }],
     player: actor('player', 'N0001'), partner: actor('partner', 'N0002'),
@@ -139,8 +139,8 @@ export class SimEngine {
       next.anchors.forEach((a, i) => {
         if (a.aligned && !before[i]) {
           al.push({ type: 'ANCHOR_ALIGNED', anchorId: a.id });
-          if (a.id === 'LANTERN') voice(next, out, 'clear', 'I can hear you now. There is a lantern burning on my side too.', Infinity);
-          else if (a.id === 'GREENHOUSE') voice(next, out, 'anchor', 'I found the marker by the garden. It matches yours.', Infinity);
+          if (a.id === 'LANTERN') out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: 'Amber and cyan: both beacons burn now, one in each world.' });
+          else if (a.id === 'GREENHOUSE') out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: 'Your signal reached them, and they have found their way across.' });
         }
       });
       const wi = out.findIndex(e => e.type === 'WIN');
@@ -212,7 +212,7 @@ function reduce(s: SimulationState, cmd: Command, out: DomainEvent[]): boolean {
     case 'SET_PHASE': {
       if (cmd.phase === 'ENDING') return reject(out, 'The ending only comes from the lookout.');
       if (cmd.phase === 'FORK') return reject(out, 'Walk to an object and interact with it.');
-      if (s.phase === 'BOOT' && cmd.phase === 'EXPLORING') voice(s, out, 'boot', VOICE_LINES.boot, Infinity);
+      if (s.phase === 'BOOT' && cmd.phase === 'EXPLORING') { voice(s, out, 'boot', VOICE_LINES.boot, Infinity); out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: OBJECTIVE_TEXT }); }
       s.phase = cmd.phase; return true;
     }
     case 'BEGIN_FORK': case 'RESOLVE_FORK': return reject(out, 'Walk to an object and choose what to do with it.');
@@ -225,7 +225,7 @@ function reduce(s: SimulationState, cmd: Command, out: DomainEvent[]): boolean {
 }
 
 function startPlay(s: SimulationState, out: DomainEvent[]): void {
-  if (s.phase === 'BOOT') { s.phase = 'EXPLORING'; voice(s, out, 'boot', VOICE_LINES.boot, Infinity); }
+  if (s.phase === 'BOOT') { s.phase = 'EXPLORING'; voice(s, out, 'boot', VOICE_LINES.boot, Infinity); out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: OBJECTIVE_TEXT }); }
 }
 
 function snapPlayer(s: SimulationState, out: DomainEvent[]): void {
@@ -265,10 +265,13 @@ export interface ActionOption { action: PhysicalAction; label: string; enabled: 
 export function availableActions(s: Readonly<SimulationState>, obj: string): ActionOption[] {
   const list = ALLOWED[obj] ?? [];
   const sc = s as SimulationState;
-  return list.filter(a => a !== 'OBSERVE' && a !== 'OPEN_SLUICE').map(a => {
+  const opts = list.filter(a => (a !== 'OBSERVE' || obj === 'lantern') && a !== 'OPEN_SLUICE').map(a => {
     const clue = blockedClue(sc, obj, a);
-    return { action: a, label: LABEL[a], enabled: !clue, ...(clue ? { clue } : {}) };
+    return { action: a, label: obj === 'lantern' && a === 'OBSERVE' ? 'Check the beacon' : LABEL[a], enabled: !clue, ...(clue ? { clue } : {}) };
   });
+  // once your flame burns, checking the beacon is the main action there
+  if (obj === 'lantern' && hasFlag(sc, 'player', 'LANTERN_LIT')) opts.sort((a, b) => (a.action === 'OBSERVE' ? -1 : 0) - (b.action === 'OBSERVE' ? -1 : 0));
+  return opts;
 }
 
 function blockedClue(s: SimulationState, obj: string, a: PhysicalAction): string | null {
@@ -325,6 +328,7 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     }
     if (obj === 'stones' && v.realm === 'ALIEN') return leaveAlien(s, out);
     if (obj.startsWith('anchor_')) return markAnchor(s, obj.slice(7) as AnchorId, out);
+    if (obj === 'lantern') { markExamined(s, obj); out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: beaconStatus(s) }); if (checkWin(s, out)) return true; return afterAction(s, out, false, true); }
     if (!first) out.push({ type: 'WORLD_CHANGED', objectId: obj, text: describe(s, obj) });
     markExamined(s, obj);
     if (!effective) { v.ineffective++; if (v.ineffective >= 3) { v.ineffective = 0; const h = objectiveHint(s); if (h.text) out.push({ type: 'WORLD_CHANGED', objectId: h.objectId, text: h.text }); } }
@@ -381,9 +385,8 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
   }
   if (obj === 'radio' && (action === 'TUNE' || action === 'HOLD_SIGNAL') && r.outcome === 'A' && !v.contact) {
     v.contact = true;
-    const la = anchorOf(s, 'LANTERN');
-    if (hasFlag(s, 'player', 'LANTERN_LIT')) la.playerReady = true;
-    out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'A clear tone, and under it a voice that is theirs.' });
+    recompute(s);
+    out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'A second note answers through the Thread. Under it, a voice that is theirs.' });
     voice(s, out, 'clear', partnerReport(s), 0);
     out.push({ type: 'PARTNER_TRACE', objectId: 'radio', text: 'I hear you. ' + partnerReport(s) });
   }
@@ -428,59 +431,48 @@ function leaveAlien(s: SimulationState, out: DomainEvent[]): boolean {
   return afterAction(s, out, true, true);
 }
 
-/** Anchors: player physical evidence at the site. Each side's readiness is earned independently. */
-function markAnchor(s: SimulationState, id: AnchorId, out: DomainEvent[], blocked?: string, justLit = false): boolean {
-  const v = s.v2;
-  const a = anchorOf(s, id);
-  markExamined(s, 'anchor_' + id);
-  let clue = blocked ?? '';
-  const wasReady = a.playerReady;
-  if (!a.playerReady) {
-    if (id === 'LANTERN') {
-      if (hasFlag(s, 'player', 'LANTERN_LIT') && v.contact) { a.playerReady = true; clue = 'The marker rings a low note as the lantern burns beside it.'; }
-      else if (hasFlag(s, 'player', 'LANTERN_LIT')) clue = 'The lantern burns, but the marker stays silent. Something on the far bank must carry your voice.';
-      else clue = 'The marker stone is silent. The lantern in the clearing is cold; dry fibre or wood could catch.';
-    } else if (id === 'GREENHOUSE') {
-      if (v.crossed && routeOpen(s, 'player')) { a.playerReady = true; clue = 'You press your palm to the half-carved symbol. It matches the one on the far bank.'; }
-      else if (!v.crossed) clue = routeOpen(s, 'player') ? 'The symbol is half-carved. Its other half lies across the river.' : 'The symbol is half-carved. The river is high, and the bridge is broken.';
-      else clue = 'The symbol is half-carved. The crossing behind you has closed.';
-    } else {
-      if (hasFlag(s, 'player', 'BEACON_LIT')) a.playerReady = true;
-      else if (!clue && !justLit) clue = 'The beacon bowl is cold. Dry wood would feed it.';
-    }
-  }
-  if (a.playerReady && !a.aligned) {
-    const other = id === 'LANTERN' ? 'Far off, nothing answers your note yet.' : id === 'GREENHOUSE' ? 'The other half of the symbol is still blank.' : 'Your beacon burns alone. Nothing answers from the other shore.';
-    clue = (justLit ? 'The bowl catches. ' : '') + other;
-  }
-  recompute(s);
-  if (a.aligned && id !== 'LIGHTHOUSE') clue = 'The marker rings twice: yours, and answering.';
-  if (id === 'LIGHTHOUSE' && a.playerReady) {
-    const missing = s.anchors.filter(x => x.id !== 'LIGHTHOUSE' && !x.aligned).map(x => (x.id === 'LANTERN' ? 'the clearing lantern' : 'the garden marker'));
-    if (a.aligned && missing.length) clue = `The beacon pulses twice, but ${missing.join(' and ')} has not answered both sides.`;
-  }
-  if (clue) out.push({ type: 'WORLD_CHANGED', objectId: 'anchor_' + id, text: clue });
-  const win = checkWin(s, out);
-  const effective = (!wasReady && a.playerReady) || justLit;
-  if (!effective) v.ineffective++; else v.ineffective = 0;
-  if (!win && !effective && v.ineffective >= 3) { v.ineffective = 0; const h = objectiveHint(s); if (h.text) out.push({ type: 'WORLD_CHANGED', objectId: h.objectId, text: h.text }); }
-  if (win) return true;
-  return afterAction(s, out, effective, true);
+export const OBJECTIVE_TEXT = 'The beacon that split you still exists in both worlds. Relight yours. Help them relight theirs. Bring the two flames into sync.';
+
+/** What the clearing beacon tells you right now, from real state only. */
+export function beaconStatus(s: Readonly<SimulationState>): string {
+  const b = beaconProgress(s);
+  const [flame, contact, heard] = b.player;
+  const [pFlame, pCrossed, pHome] = b.partner;
+  if (!flame) return s.player.inventory.fuel < 1 ? 'The beacon is cold. Dry wood by the trees would feed it.' : 'The beacon is cold. You have fuel to relight it.';
+  if (!contact) return 'Your flame burns, but your voice cannot reach them. The radio across the stream needs power and the right frequency.';
+  if (!heard) return pCrossed ? 'Their light answers yours. Call through the Thread (C) so they know you are here.' : 'Their voice is clear now, but they are stuck on their bank. Call through the Thread (C) and tell them what you learned.';
+  if (!pFlame) return 'They heard you. Their beacon is still cold. Wait here; they are working on it.';
+  if (!pCrossed) return 'They heard you, but they still need a safe way across on their side.';
+  if (!pHome) return 'They found their way through. They are walking back to their beacon.';
+  if (s.link === 'LAST_SIGNAL' || s.link === 'FADED') return 'Both flames burn, but the Thread is too thin to hold them. Rest at a thread stone first.';
+  if (s.bondStrain > TUNING.WIN_STRAIN_MAX) return 'Both flames burn, but the Thread is overdrawn. Rest before you try.';
+  return 'Both flames are ready. The Thread is holding. Stand by the beacon to synchronise.';
 }
 
-/** Win: all three aligned, both at lit beacons, Thread viable. Never inferred from equal node ids. */
+/** Old marker stones now point you at the beacon (no separate requirements). */
+function markAnchor(s: SimulationState, id: AnchorId, out: DomainEvent[], blocked?: string, justLit = false): boolean {
+  markExamined(s, 'anchor_' + id);
+  const text = blocked ?? (id === 'LIGHTHOUSE' && justLit ? 'The lookout burns. Far off, the clearing beacon is what matters.' : 'The marker stone points back to the beacon in the clearing. ' + beaconStatus(s));
+  out.push({ type: 'WORLD_CHANGED', objectId: 'anchor_' + id, text });
+  if (checkWin(s, out)) return true;
+  return afterAction(s, out, justLit, true);
+}
+
+/** Win: both clearing beacons lit, contact made, a technique understood, partner back at its beacon, player beside yours, Thread viable. */
 function checkWin(s: SimulationState, out: DomainEvent[]): boolean {
   if (s.won) return true;
-  if (!s.anchors.every(a => a.aligned)) return false;
+  recompute(s);
+  const b = beaconProgress(s);
+  if (!b.player.every(Boolean) || !b.partner.every(Boolean)) return false;
   if (s.link !== 'CONNECTED' && s.link !== 'FRAYING') return false;
-  if (!hasFlag(s, 'player', 'BEACON_LIT') || !hasFlag(s, 'partner', 'BEACON_LIT')) return false;
-  if (s.partner.site !== 'BEACON') return false;
-  const t = OBJECT_TILES.anchor_LIGHTHOUSE;
-  if (Math.max(Math.abs(t.tx - s.v2.gridX), Math.abs(t.ty - s.v2.gridY)) > 1) return false;
   if (s.bondStrain > TUNING.WIN_STRAIN_MAX) return false;
-  addStep(s, { actor: 'partner', fromNodeId: s.partner.nodeId, toNodeId: s.partner.nodeId, action: 'REUNION', cause: 'Both beacons burned at once and the Thread carried the overlap.', effect: 'For one moment, the two forests are the same forest.' });
-  addHistory(s, 'partner', 'BEACON', 'REUNION', undefined, 'Both beacons burn at once.');
+  const t = OBJECT_TILES.lantern;
+  if (Math.max(Math.abs(t.tx - s.v2.gridX), Math.abs(t.ty - s.v2.gridY)) > 1) return false;
+  for (const a of s.anchors) { a.playerReady = a.partnerReady = a.aligned = a.coordinated = a.playerPhysical = a.partnerPhysical = true; }
+  addStep(s, { actor: 'partner', fromNodeId: s.partner.nodeId, toNodeId: s.partner.nodeId, action: 'REUNION', cause: 'Both clearing beacons burned at once and the Thread carried the overlap.', effect: 'For one moment, the two forests are the same forest.' });
+  addHistory(s, 'partner', 'CLEARING', 'REUNION', undefined, 'Both beacons burn at once.');
   s.won = true; s.phase = 'ENDING'; s.v2.ending = 'WIN';
+  out.push({ type: 'ANCHOR_ALIGNED', anchorId: 'LIGHTHOUSE' });
   voice(s, out, 'final', VOICE_LINES.final, Infinity);
   addLog(s, 'There you are.', 'partner');
   out.push({ type: 'WIN' });
@@ -497,7 +489,8 @@ function sendMessage(s: SimulationState, out: DomainEvent[], kind?: ThreadMessag
   let k = kind ?? 'CALL';
   let tech = technique;
   if (!tech && (kind === undefined || kind === 'TECHNIQUE') && s.v2.learned.length) {
-    tech = s.v2.learned.find(t => !s.v2.shared.includes(t)) ?? s.v2.learned[s.v2.learned.length - 1];
+    const useful = !s.partner.crossed && s.v2.learned.includes('open_sluice') && !(s.partner.knowledge ?? []).includes('open_sluice') ? 'open_sluice' : undefined;
+    tech = useful ?? s.v2.learned.find(t => !s.v2.shared.includes(t)) ?? s.v2.learned[s.v2.learned.length - 1];
     k = 'TECHNIQUE';
   }
   if (tech) { k = 'TECHNIQUE'; if (!s.v2.shared.includes(tech)) s.v2.shared.push(tech); }
@@ -510,7 +503,7 @@ function sendMessage(s: SimulationState, out: DomainEvent[], kind?: ThreadMessag
 function doCall(s: SimulationState, out: DomainEvent[], kind?: ThreadMessage['kind'], technique?: string): boolean {
   if (s.phase === 'ARCHIVE') return reject(out, 'Close the archive first.');
   if (s.link === 'FADED') return reject(out, 'The Thread is silent.');
-  if (s.player.inventory.fuel < 1) return clueReject(s, out, 'Your lantern has no fuel to carry a call. Dry wood by the trees, or dry fibre from the garden, would feed it.');
+  if (s.player.inventory.fuel < 1) return reject(out, 'A call through the Thread burns one load of fuel, and you carry none. Dry wood lies by the trees.');
   startPlay(s, out);
   s.player.inventory.fuel--;
   s.bondStrain += TUNING.CALL_STRAIN;
@@ -519,7 +512,8 @@ function doCall(s: SimulationState, out: DomainEvent[], kind?: ThreadMessage['ki
   const prev = s.messages.slice(0, -1).reverse().find(x => x.from === 'player');
   const novel = !prev || prev.kind !== m.kind || prev.technique !== m.technique || prev.site !== m.site;
   addHistory(s, 'player', siteOfPlayer(s), 'CALL', m.kind, m.technique ?? 'You call across the Thread.');
-  out.push({ type: 'WORLD_CHANGED', objectId: '', text: m.clarity >= 0.6 ? 'Your voice carries across the Thread. The lantern burns lower.' : 'Your voice frays on its way. The lantern burns lower.' });
+  const what = m.technique === 'open_sluice' ? ' You tell them how the sluice gate lowers the water.' : m.technique ? ' You tell them what worked for you.' : '';
+  out.push({ type: 'WORLD_CHANGED', objectId: '', text: (m.clarity >= 0.6 ? 'Your voice carries across the Thread.' : 'Your voice frays on its way.') + what + ' It cost one load of fuel.' });
   s.v2.ineffective = 0;
   s.turn++;
   recompute(s);

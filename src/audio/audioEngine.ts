@@ -59,6 +59,7 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private musicGain!: GainNode;
+  private musicReady = false;
   private amberLP!: BiquadFilterNode;
   private amberBus!: GainNode;
   private cyanBus!: GainNode;
@@ -110,6 +111,7 @@ export class AudioEngine {
       this.musicGain.gain.cancelScheduledValues(now);
       this.musicGain.gain.setValueAtTime(0, now);
       this.musicGain.gain.linearRampToValueAtTime(0.55, now + 2.5);
+      setTimeout(() => { this.musicReady = true; this.applyState(false); }, 2600);
       this.applyState(true);
       // preload (silent failures)
       (['boot', 'find', 'safe', 'help', 'echo_received', 'divergence', 'overstrain', 'anchor', 'final'] as VoiceCue[]).forEach((c) => void this.load(`voice_${c}`));
@@ -271,6 +273,7 @@ export class AudioEngine {
     ramp(this.delayWet.gain, 0.25 + 0.5 * d);
     ramp(this.delayFb.gain, 0.3 + 0.35 * d);
     ramp(this.voiceLP.frequency, 9000 - 5500 * d);      // moderate; speech stays intelligible (>=3.5k)
+    if (this.musicReady) ramp(this.musicGain.gain, 0.55 * (1 - 0.8 * d)); // V5: the whole score thins as the worlds drift apart (voice/SFX stay separate)
   }
 
   private tick(): void {

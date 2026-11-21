@@ -5,6 +5,7 @@ import Phaser from 'phaser';
 import type { Identity, SimulationState, Stats } from '../sim/types';
 import { MAP_ROWS, MAP_W, MAP_H, TILE, getWalkability, type Realm } from '../world/topology';
 import { FORK_OBJECTS, OBJECT_LABELS } from './layout';
+import { beaconProgress } from '../sim/core';
 
 export const SK = {
   paper: 0xefe6d6, graphite: 0x3b3a40, amber: 0xe6b66e, cyan: 0x7be0df, pink: 0xe8a0b4,
@@ -160,6 +161,16 @@ export function drawScribbleWorld(scene: Phaser.Scene, c: Phaser.GameObjects.Con
 
   // ---- clearing fire (lantern, 9,4): foreground, slightly larger ----
   put(SD('campfire'), 9.5, 4.45, 1.45, lampLit ? { tint: 0xffc77a } : { tint: 0x9d9a94, a: 0.9 });
+  // ---- V5: the beacon shows both sides. Two arcs of three imported rune stones: amber (you) left, cyan (them) right ----
+  { const bp = beaconProgress(s); const both = bp.player.every(Boolean) && bp.partner.every(Boolean);
+    const arc = (side: -1 | 1, done: boolean[], col: number) => done.forEach((d, i) => {
+      const ang = (-0.75 + i * 0.75) * 0.9; // -0.68, 0, 0.68 rad around the side
+      const x = 9.5 + side * Math.cos(ang) * 0.95, y = 4.45 + Math.sin(ang) * 0.75;
+      put(SD('tiles_decorative'), x, y, 0.3, { rot: i * 0.6 + (side > 0 ? 0.3 : 0), tint: d ? (both ? 0xf3e7b0 : col) : 0xb9b4a8, a: d ? 1 : 0.45 });
+    });
+    arc(-1, bp.player, 0xe6a64a);
+    arc(1, bp.partner, 0x5fd0cf);
+  }
   // lantern anchor (11,5): rune plate
   put(SD('tiles_decorative'), 11.5, 5.5, 0.7, { rot: 0.4, tint: 0xe0d6c0, a: 0.9 });
   // garden anchor (16,3)

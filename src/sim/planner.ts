@@ -93,42 +93,26 @@ export function objectiveHint(s: S, opts: { skipCalls?: boolean } = {}): Hint {
     const sp = safePlace(s);
     if (sp) return { objectId: sp, action: 'REST', text: s.link === 'LAST_SIGNAL' ? 'Their voice is a single note. Rest at a safe place now.' : 'The colours dull. Rest at a safe place until the Thread settles.' };
   }
-  // 1. fuel: one load each for the lantern and the beacon, one to call
-  const need = (lit ? 0 : 1) + (beacon ? 0 : 1) + (callOk && learned.some(t => !s.v2.shared.includes(t)) ? 1 : 0);
+  const contact = !!s.v2.contact, heard = !!s.partner.heard;
+  // 1. fuel: one load to relight the beacon, one for a call
+  const need = (lit ? 0 : 1) + (callOk && !heard && contact ? 1 : 0);
   if (inv.fuel < need) {
-    if (s.player.taken.wood < TUNING.PILE) return { objectId: 'woodpile', action: 'GATHER', text: 'The fire pit is cold. Dry wood by the trees could catch.' };
-    if (!has(s, 'GARDEN_WITHERED') && (!lit || !beacon)) return { objectId: 'greenhouse', action: 'HARVEST', text: 'The wood is gone. Dry fibre in the garden could catch, but the beds would go bare.' };
-    return { objectId: 'woodpile', action: 'WAIT', text: 'The pile is picked clean. The tide leaves more driftwood in time.' };
+    if (s.player.taken.wood < TUNING.PILE) return { objectId: 'woodpile', action: 'GATHER', text: 'Dry wood by the trees would feed the beacon.' };
+    if (!has(s, 'GARDEN_WITHERED')) return { objectId: 'greenhouse', action: 'HARVEST', text: 'The wood is gone. Dry fibre in the garden would burn, but the beds would go bare.' };
+    return { objectId: 'woodpile', action: 'WAIT', text: 'The pile is picked clean. More driftwood washes up in time.' };
   }
-  // 2. HEAR
-  if (!lit && inv.fuel >= 1) return { objectId: 'lantern', action: s.v2.examined.includes('lantern') ? 'RELIGHT' : 'OBSERVE', text: 'You have fuel. The lantern could catch.' };
-  if (lit && !anchor(s, 'LANTERN').playerReady) {
-    if (s.v2.contact) return { objectId: 'anchor_LANTERN', action: 'OBSERVE', text: 'The lantern burns. The marker stone by the road should answer.' };
-    return puzzleHint(s);
+  // 2. flame
+  if (!lit) return { objectId: 'lantern', action: 'RELIGHT', text: 'You have fuel. Relight the beacon in the clearing.' };
+  // 3. connection: the radio puzzle
+  if (!contact) return puzzleHint(s);
+  // 4. coordination: tell them something useful
+  if (!heard) {
+    if (!callOk) return { objectId: 'lantern', action: 'WAIT', text: 'Your beacon burns, but they cannot hear what you know.' };
+    return { objectId: '', action: 'CALL', call: { kind: 'TECHNIQUE' }, text: 'Call through the Thread (C) and tell them what you learned.' };
   }
-  // 3. the water
-  if (!coast) {
-    return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'DIVERT_WATER' : 'OBSERVE', text: 'The ford and the sand path lie under water. The sluice gate could lower the stream.' };
-  }
-  // 4. tell them what worked
-  if (callOk && learned.includes('open_sluice') && !s.v2.shared.includes('open_sluice') && inv.fuel >= 1) {
-    return { objectId: '', action: 'CALL', call: { kind: 'TECHNIQUE', technique: 'open_sluice' }, text: 'The water is down. Call across and tell them how the sluice opens.' };
-  }
-  // 5. FIND
-  if (!s.v2.crossed && routeOpen) return { objectId: 'stones', action: 'OBSERVE', text: 'The ford is dry. Cross to the far bank.' };
-  if (!routeOpen) return { objectId: 'bridge', action: 'BRACE', text: 'The way across is still closed.' };
-  if (s.v2.crossed && !anchor(s, 'GREENHOUSE').playerReady) return { objectId: 'anchor_GREENHOUSE', action: 'OBSERVE', text: 'You have crossed. The garden marker holds the other half of the symbol.' };
-  // 6. beacon
-  if (!beacon) {
-    if (inv.fuel >= 1) return { objectId: 'anchor_LIGHTHOUSE', action: 'BEACON', text: 'The sand path is open. The lookout beacon only needs a flame.' };
-    return { objectId: 'woodpile', action: s.player.taken.wood < TUNING.PILE ? 'GATHER' : 'WAIT', text: 'The beacon bowl is empty. Dry wood would feed it.' };
-  }
-  // 7. wait for the other side, and answer what it says
-  const line = lastPartnerLine(s);
-  if (callOk && /cross|river|sand path/.test(line) && learned.includes('open_sluice') && inv.fuel >= 1) {
-    return { objectId: '', action: 'CALL', call: { kind: 'TECHNIQUE', technique: 'open_sluice' }, text: 'They cannot cross. Call again and tell them how the sluice opens.' };
-  }
-  return { objectId: 'anchor_LIGHTHOUSE', action: 'WAIT', text: 'Your beacon burns. Wait at the lookout for the answering pulse.' };
+  void learned; void coast; void routeOpen; void beacon;
+  // 5. go home to the beacon and wait for them
+  return { objectId: 'lantern', action: 'WAIT', text: 'Wait by the beacon. They are making their own way back.' };
 }
 
 export function hintToCommand(s: S, h: Hint): Command | null {

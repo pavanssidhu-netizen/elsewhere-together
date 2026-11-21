@@ -76,11 +76,29 @@ export function calculateDrift(s: SimulationState): number {
   return clamp100(lin + mismatch + water + fire - aligned - (s.v2.calm ?? 0));
 }
 
+/**
+ * The single shared objective: the clearing beacon in both worlds. Three conditions per side (amber = player, cyan = partner):
+ *  player: [flame lit, radio contact, a technique understood by the partner]
+ *  partner: [its flame lit, found its way across, back at its clearing beacon]
+ * Stored on the existing anchors (LANTERN = flame, GREENHOUSE = connection/route, LIGHTHOUSE = coordination); sticky once earned.
+ */
+export function beaconProgress(s: Readonly<SimulationState>): { player: [boolean, boolean, boolean]; partner: [boolean, boolean, boolean] } {
+  const ss = s as SimulationState;
+  return {
+    player: [hasFlag(ss, 'player', 'LANTERN_LIT'), !!s.v2.contact, !!s.partner.heard],
+    partner: [hasFlag(ss, 'partner', 'LANTERN_LIT'), !!s.partner.crossed, !!s.partner.crossed && s.partner.site === 'CLEARING' && hasFlag(ss, 'partner', 'LANTERN_LIT')],
+  };
+}
+
 export function refreshAnchors(s: SimulationState): void {
-  for (const a of s.anchors) {
+  const b = beaconProgress(s);
+  s.anchors.forEach((a, i) => {
+    if (i < 2) { a.playerReady ||= b.player[i]; a.partnerReady ||= b.partner[i]; }
+    else { a.playerReady = b.player[2]; a.partnerReady = b.partner[2]; } // coordination is live: partner must be at its beacon now
     a.playerPhysical = a.playerReady; a.partnerPhysical = a.partnerReady;
-    a.aligned = a.playerReady && a.partnerReady; a.coordinated = a.aligned;
-  }
+    a.aligned = a.aligned || (a.playerReady && a.partnerReady && i < 2) || (i === 2 && a.playerReady && a.partnerReady);
+    a.coordinated = a.aligned;
+  });
 }
 
 export function recompute(s: SimulationState): void {
@@ -92,7 +110,7 @@ export function recompute(s: SimulationState): void {
 
 export const inDanger = (s: SimulationState): boolean =>
   s.realityDrift >= TUNING.FRAY_DRIFT || s.bondStrain >= TUNING.FRAY_STRAIN
-  || (s.realityDrift >= TUNING.COMBO_DRIFT && s.bondStrain >= TUNING.COMBO_STRAIN) || s.v2.idleTicks >= TUNING.IDLE_DANGER;
+  || (s.realityDrift >= TUNING.COMBO_DRIFT && s.bondStrain >= TUNING.COMBO_STRAIN); // V5: idleness alone never frays the Thread
 
 /** Safe sites the player could rest at (physical state only). */
 export function safeSites(s: SimulationState): string[] {

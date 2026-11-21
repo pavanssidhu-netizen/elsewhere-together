@@ -43,6 +43,7 @@ function ambient(s: SimulationState, out: DomainEvent[], o: Ambient): 'A' | 'B' 
   addHistory(s, 'player', 'CLEARING', o.action, sel, chosen.text);
   recompute(s);
   rec.driftAfter = s.realityDrift; rec.strainAfter = s.bondStrain;
+  out.push({ type: 'FORK_RESOLVED', record: rec }); // a genuine branch: same pink bloom as player forks
   out.push({ type: 'WORLD_CHANGED', objectId: o.object, text: chosen.text });
   addLog(s, chosen.text, 'event');
   return sel;
@@ -53,7 +54,7 @@ export function ignition(s: SimulationState, out: DomainEvent[]): boolean {
   const dry = hasFlag(s, 'player', 'DRY');
   const sel = ambient(s, out, {
     template: 'ignition', object: 'lantern', action: 'IGNITION', pA: dry ? TUNING.SPREAD_DRY : TUNING.SPREAD_WET,
-    A: { text: 'Sparks leap into the undergrowth. The fire spreads, and smoke rolls over the garden road.', flags: ['FIRE_SPREAD', 'SMOKE', 'RADIO_SMOKE'], instability: 8 },
+    A: { text: 'The brush is catching. Smoke rolls over the garden road, toward the radio.', flags: ['FIRE_SPREAD', 'SMOKE', 'RADIO_SMOKE'], instability: 8 },
     B: { text: 'The sparks die in the grass.' },
     reason: r => dry
       ? (r === 'A' ? 'Because the river was diverted, the undergrowth was dry; the signal fire caught.' : 'The undergrowth was dry, but the sparks fell on bare earth.')

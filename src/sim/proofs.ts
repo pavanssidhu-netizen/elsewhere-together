@@ -35,10 +35,17 @@ function fireScript(e: SimEngine, readFirst: boolean, until: Stop): Command[] {
   }, until, 700);
 }
 
-/** B: divert + fire, then do nothing until the Thread fades. */
+/** B: divert + fire in dry brush, then keep forcing calls through a thinning Thread (burning every scrap of fuel) until it fades. */
 function proofB(seed: number): Command[] {
   const e = new SimEngine(seed, undefined, true);
-  return fireScript(e, false, s => s.phase === 'FADE');
+  const cmds = fireScript(e, false, s => flag(s, 'LANTERN_LIT') || s.phase === 'FADE');
+  cmds.push(...drive(e, s => {
+    if (s.player.inventory.fuel >= 1) return { type: 'CALL' } as Command;
+    if (s.player.taken.wood < 3) return act(s, 'woodpile', 'GATHER');
+    if (!flag(s, 'GARDEN_WITHERED')) return act(s, 'greenhouse', 'HARVEST');
+    return act(s, 'woodpile', 'GATHER') ?? ({ type: 'ADVANCE_PARTNER' } as Command);
+  }, s => s.phase === 'FADE', 900));
+  return cmds;
 }
 
 /** C: cascade, then follow the other history from the sluice, then win. */
@@ -54,6 +61,6 @@ function proofC(seed: number): Command[] {
 function proofD(): Command[] { return Array.from({ length: 60 }, () => ({ type: 'ADVANCE_PARTNER' } as Command)); }
 
 export const proofScripts: Record<'A' | 'B' | 'C' | 'D', Command[]> = {
-  A: proofA(1), B: proofB(1), C: proofC(1), D: proofD(),
+  A: proofA(1), B: proofB(5), C: proofC(1), D: proofD(), // B uses seed 5: the fire is not rained out before the Thread fades
 };
 export { proofA, proofB, proofC, proofD };

@@ -15,16 +15,21 @@ node e2e/run.mjs   # real-browser test (needs local playwright + chromium, see f
 ```
 Deploy `dist/` to any static host. It needs no network at runtime.
 
+## How to play
+The beacon in the clearing split, and so did you. Relight yours, help them relight theirs, and bring the two flames into sync.
+
+- **Your side (amber runes, left of the beacon):** relight the beacon with fuel; make radio contact (power from the waterwheel plus the frequency carved across the stream, which you can only reach in the history where the river is diverted, so you follow the other history at the sluice); call through the Thread and tell them what you learned.
+- **Their side (cyan runes, right of the beacon):** they light their own beacon, find a way across their river (they need your sluice technique), and walk back to their beacon.
+- When all six runes glow, stand by the beacon. No objects ever cross between the worlds; only information does.
+- **Fading:** pushing the Thread while the worlds diverge (fire in dry brush, forced calls, strain) frays it through three warnings. Standing still never fades you. Rest at the thread or echo stones to recover.
+
 ## Controls
 | | Desktop | Mobile |
 |---|---|---|
 | Move | WASD / arrows | D-pad |
-| Keep it (SELF) / use object | E (or Space) | KEEP / USE |
-| Send it across (ECHO) | Q | SEND |
-| Let it be (LET GO) | F | LET BE |
+| Object actions (shown by the object) | E / Q / F | buttons |
+| Call through the Thread (1 fuel) | C | CALL button |
 | Replay last caption | L | L |
-
-Top bar: style (SCRIBBLE / PIXEL / INK / INK-LIGHT), sound, distortion, help. The old echo stones calm the thread (lower drift). The thread terminal lowers strain. If you wander for a while without acting, a hint appears.
 
 ## Designer shortcuts
 - Title **DEMO** plays a winning route step by step through the real engine.

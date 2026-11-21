@@ -45,6 +45,7 @@ export class Shell {
     on('#b-mute', () => h.toggleMute()); on('#b-reduce', () => h.toggleReduce());
     on('#b-cog', () => $(this.root, '#settings').classList.toggle('open')); on('#b-style', () => toggleArtStyle());
     on('#help-close', () => this.help(false));
+    on('#b-call', () => (window as any).__etCall?.());
     on('#t-play', () => h.play()); on('#t-new', () => h.newGame()); on('#t-demo', () => h.demo());
     on('#t-mute', () => h.toggleMute());
     on('#t-about', () => this.about(true)); on('#about-close', () => this.about(false));
@@ -196,6 +197,7 @@ const TEMPLATE = `
     <button id="b-cog" title="Settings" aria-label="Settings">&#9881;</button>
     <div id="settings" class="settings"><button id="b-reduce" aria-pressed="false">DISTORTION: FULL</button><button id="b-style">STYLE</button></div>
   </header>
+  <button id="b-call" class="callbtn" title="Call through the Thread (C). Costs one load of fuel and strains the Thread.">CALL THROUGH THE THREAD <kbd>C</kbd> <small>uses 1 fuel</small></button>
   <main class="stage">
     <div class="viewport" id="viewport"><div id="game"></div><div id="caps" class="caps" role="status" aria-live="polite"></div></div>
     <div id="verbs" class="verbs" data-kind="none">
@@ -230,7 +232,7 @@ const TEMPLATE = `
       <div class="split-line"></div>
     </div>
     <p class="i-1">Two of you, side by side.</p>
-    <p class="i-2">Then a branch opens between you.</p>
+    <p class="i-2">Then the beacon between you flares, and splits the world in two.</p>
     <p class="i-3">Which one of them are you?</p>
     <div class="btns choose"><button id="id-amber" class="idbtn amber">${blob('amber')}<span>JENSEN</span></button><button id="id-cyan" class="idbtn cyan">${blob('cyan')}<span>SAM</span></button></div>
   </div></section>
@@ -244,11 +246,11 @@ const TEMPLATE = `
 
   <div id="help" class="overlay"><div class="card">
     <div class="card-h">HELP</div>
-    <p>Walk to an object. Every old thing here splits the world in two when you touch it. You and your partner each live in one branch of it.</p>
+    <p>The beacon that split you still exists in both worlds. Relight yours. Help them relight theirs. Bring the two flames into sync. Uncertain events split the world again as you go; a pink edge means a new branch.</p>
     <ul>
-      <li><b>KEEP (E)</b>: take what helps you. It may cost your partner later.</li>
       <li><b>E / Q / F</b>: the actions shown next to the object you are standing by.</li>
-      <li><b>LET BE (F)</b>: leave it to chance. Preparing first can tip it.</li>
+      <li><b>C</b>: call through the Thread. Tell your partner something you learned. It burns one load of fuel.</li>
+      <li>The beacon in the clearing shows both of you: amber is your side, cyan is theirs. When both are complete, stand beside it.</li>
       <li>Warnings tell you where to go if the thread frays. The old stones and the thread terminal help.</li>
     </ul>
     <p class="keys"><b>Keys:</b> WASD / arrows move · E Q F act · L last caption · Esc close.<br>Mobile: D-pad and the verb buttons.</p>

@@ -11,7 +11,7 @@ export const TEMPLATES: EventTemplate[] = [
     { id: 'A', text: 'The flame catches and holds.', delta: { light: 2, signal: 1 }, flags: ['LANTERN_LIT'], remove: ['LANTERN_BROKEN'] },
     { id: 'B', text: 'The glass cracks and the flame gutters out.', delta: { instability: 8 }, flags: ['LANTERN_BROKEN'] } ] },
   { id: 'bridge', label: 'The Bridge', triggerObjectId: 'bridge', outcomes: [
-    { id: 'A', text: 'The boards take your weight. The bridge spans the stream.', delta: { structure: 1 }, flags: ['BRIDGE_OPEN'], remove: ['BRIDGE_CLOSED', 'BRIDGE_COLLAPSED'] },
+    { id: 'A', text: 'The boards take your weight. The far bank is reachable without draining the river.', delta: { structure: 1 }, flags: ['BRIDGE_OPEN'], remove: ['BRIDGE_CLOSED', 'BRIDGE_COLLAPSED'] },
     { id: 'B', text: 'The supports shift and the span falls into the water.', delta: { instability: 6 }, flags: ['BRIDGE_COLLAPSED'] } ] },
   { id: 'radio', label: 'The Radio', triggerObjectId: 'radio', outcomes: [
     { id: 'A', text: 'The static clears into one steady tone.', delta: { signal: 1 }, flags: ['RADIO_CLEAR'], remove: ['RADIO_STATIC'] },
@@ -56,8 +56,8 @@ export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
     blocked: c => f(c, 'LANTERN_LIT') ? 'The lantern already burns.'
       : inv(c).fuel < 1 ? 'The fire pit is cold. Dry wood by the trees, or dry fibre from the garden, could catch.' : null,
     pA: c => clamp(0.5 + (w(c).water <= 1 ? 0.2 : w(c).water >= 3 ? -0.15 : 0) + (c.prepared ? 0.15 : 0) + (inv(c).fuel >= 2 ? 0.1 : 0) - (f(c, 'LANTERN_BROKEN') ? 0.1 : 0), 0.15, 0.9),
-    A: { text: 'The flame catches and holds. Warm light fills the clearing.' },
-    B: { text: 'The glass cracks and the flame gutters out. The clearing stays dark.' },
+    A: { text: 'The beacon catches and holds. Your half of it burns amber.' },
+    B: { text: 'The flame gutters out and the bowl cracks. Try again with more fuel.' },
     signal: ['a warm, steady note', 'a short broken note'], technique: 'relight',
   },
   BEACON: {
@@ -119,7 +119,7 @@ export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
 SPECS.DIVERT_WATER = {
   ...SPECS.OPEN_SLUICE!, action: 'DIVERT_WATER',
   blocked: c => f(c, 'WATER_DIVERTED') && w(c).water <= 1 ? 'The water is already diverted.' : null,
-  A: { text: 'The gate grinds across. The channel empties and the waterwheel slows to a stop. The ford and the sand path surface.' },
+  A: { text: 'The gate grinds across. The crossing is exposed and the sand path surfaces. But the waterwheel has stopped: the radio may be without power.' },
   B: { text: 'The gate jams. The stream rises over its banks and the waterwheel keeps turning.' },
 };
 void you;

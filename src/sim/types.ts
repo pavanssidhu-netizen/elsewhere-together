@@ -94,6 +94,8 @@ export interface ActorState {
   lastSeenMsg?: number;     // index into messages
   refusals?: number;
   plan?: string;            // partner: current plan key (plan changes emit a trace)
+  heard?: boolean;          // partner: understood at least one technique sent through the Thread
+  lastWait?: string;        // partner: last waiting line shown (dedupe)
 }
 
 export interface AnchorState {

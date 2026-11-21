@@ -16,7 +16,7 @@ function defaultTrace(s: SimulationState, action: string, text: string): { text:
   const n = SITE_NAME[site];
   if (action === 'TRAVEL') return { objectId, text: site === 'CROSSING' && !routeOpen(s, 'partner') ? "I've reached the crossing. Mine is still flooded." : `I've reached the ${n}.` };
   if (action === 'REFUSE') return { objectId, text: "I can't take that in right now. I'm steadying myself." };
-  if (action === 'LEARN') return { objectId, text: "I think I understand. I'll try it on my side." };
+  if (action === 'LEARN') return { objectId: 'tide', text: 'A cyan echo flickers at the sluice. They are trying what you told them.' };
   if (action === 'REST') return { objectId, text: `I'm resting at the ${n} until the Thread settles.` };
   if (action === 'GATHER') return { objectId, text: 'I have wood, or planks, in hand now.' };
   if (action === 'WAIT') return { objectId, text: `I'm at the ${n}, waiting. ${text.replace(/\.$/, '')}.` };
@@ -65,14 +65,14 @@ function planFor(s: SimulationState, id: AnchorId): Step | { blocked: string } {
     if (!hasFlag(s, 'partner', 'GARDEN_WITHERED')) return go('GARDEN', { action: 'HARVEST' });
     return { action: 'WAIT', why: 'No fuel is left here.' };
   };
+  // V5: one shared objective, its own clearing beacon. 1) light it  2) find a way across (needs a crossing)  3) come back to it.
   if (id === 'LANTERN') {
     if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return fuelStep() ?? go('CLEARING', { action: 'RELIGHT' });
-    return go('CLEARING', { action: 'MARK', anchor: 'LANTERN' });
+    return { action: 'WAIT', why: '' };
   }
   const crossing = (): Step | { blocked: string } | null => {
     if (routeOpen(s, 'partner')) return null;
-    if (knows('open_sluice') && !hasFlag(s, 'partner', 'COAST_OPEN')) return go('CROSSING', { action: 'OPEN_SLUICE' });
-    if (knows('open_sluice') && nodeOf(s, 'partner').world.water >= 3) return go('CROSSING', { action: 'OPEN_SLUICE' });
+    if (knows('open_sluice')) return go('CROSSING', { action: 'OPEN_SLUICE' });
     if (p.inventory.plank >= 1) return go('CROSSING', { action: 'BRACE' });
     if (p.taken.plank < TUNING.PILE) return go('CROSSING', { action: 'GATHER_PLANK' });
     return { blocked: "The river is high and there are no planks on this bank. I can't cross from here." };
@@ -83,15 +83,12 @@ function planFor(s: SimulationState, id: AnchorId): Step | { blocked: string } {
       if (c) return c;
       return { action: 'TRAVEL', to: 'TOWER' };
     }
-    return go('GARDEN', { action: 'MARK', anchor: 'GREENHOUSE' });
+    return { action: 'WAIT', why: '' };
   }
-  // LIGHTHOUSE
-  if (!coastOpen(s, 'partner')) {
-    if (knows('open_sluice')) return go('CROSSING', { action: 'OPEN_SLUICE' });
-    return { blocked: 'The sand path is under water. I do not know how to bring it down.' };
-  }
-  if (!hasFlag(s, 'partner', 'BEACON_LIT')) return fuelStep() ?? go('BEACON', { action: 'BEACON' });
-  return go('BEACON', { action: 'MARK', anchor: 'LIGHTHOUSE' });
+  // LIGHTHOUSE = back home at its clearing beacon
+  if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return fuelStep() ?? go('CLEARING', { action: 'RELIGHT' });
+  if (site !== 'CLEARING') { if (!travelOk(s, site, 'CLEARING')) { const c = crossing(); if (c) return c; } return { action: 'TRAVEL', to: 'CLEARING' }; }
+  return { action: 'WAIT', why: 'Our beacon is lit. I am back beside it, waiting for yours.' };
 }
 
 const stepFor = (s: SimulationState, id: AnchorId) => planFor(s, id);
@@ -104,6 +101,7 @@ function record(s: SimulationState, out: DomainEvent[], goal: Goal, action: stri
   out.push({ type: 'PARTNER_ACTED', goal, text });
   addLog(s, text, 'partner');
   const tr = trace ?? defaultTrace(s, action, text);
+  if (action === 'WAIT') { if (p.lastWait === tr.text) return; p.lastWait = tr.text; } else p.lastWait = undefined;
   out.push({ type: 'PARTNER_TRACE', text: tr.text, objectId: tr.objectId });
 }
 
@@ -131,7 +129,8 @@ function respond(s: SimulationState, out: DomainEvent[]): boolean {
     }
     if (m.kind === 'TECHNIQUE' && m.technique) {
       if (!(p.knowledge ?? []).includes(m.technique)) p.knowledge!.push(m.technique);
-      voice(s, out, 'help', `I understood. ${m.technique === 'open_sluice' ? 'You opened the sluice gate to lower the water. I can try that.' : 'I can try what you did.'}`, 0);
+      p.heard = true;
+      voice(s, out, 'help', m.technique === 'open_sluice' ? "I think I understand. There's a sluice on my side too." : 'I heard you. I know you are there now.', 0);
       record(s, out, 'RESPOND_TO_CALL', 'LEARN', `Learns from the call: ${m.technique.replace(/_/g, ' ')}.`);
     } else if (m.kind === 'LOCATION') {
       p.priority = m.site;
@@ -143,7 +142,7 @@ function respond(s: SimulationState, out: DomainEvent[]): boolean {
       record(s, out, 'RESPOND_TO_CALL', 'WAIT', 'Takes the warning to heart.');
     } else {
       voice(s, out, 'clear', partnerReport(s), 0);
-      record(s, out, 'RESPOND_TO_CALL', 'WAIT', 'Answers the call.');
+      record(s, out, 'RESPOND_TO_CALL', 'WAIT', 'Answers the call, but there is nothing new to tell it.');
     }
     s.messages.push({ from: 'partner', to: 'player', kind: 'LOCATION', site: p.site!, turn: s.turn, clarity: m.clarity });
     p.lastSeenMsg = s.messages.length;
@@ -175,7 +174,7 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], opts: { resp
 
   // REACH_NEXT_SITE / PREPARE_BEACON
   const order: AnchorId[] = ['LANTERN', 'GREENHOUSE', 'LIGHTHOUSE'];
-  const pending = order.filter(id => !anchorOf(s, id).partnerReady);
+  const pending = order.filter(id => (id === 'LANTERN' ? !hasFlag(s, 'partner', 'LANTERN_LIT') : id === 'GREENHOUSE' ? !p.crossed : !(p.site === 'CLEARING' && hasFlag(s, 'partner', 'LANTERN_LIT'))));
   let goal: Goal = 'REACH_NEXT_SITE';
   let queue = pending.length ? pending : (['LIGHTHOUSE'] as AnchorId[]);
   if (!pending.length) goal = 'PREPARE_BEACON';
@@ -223,9 +222,12 @@ function do_(s: SimulationState, out: DomainEvent[], goal: Goal, st: Step): bool
   switch (st.action) {
     case 'TRAVEL': {
       if (!st.to || !travelOk(s, p.site!, st.to)) return false;
+      const first = st.to === 'TOWER' && !p.crossed;
       p.site = st.to;
       if (st.to === 'TOWER') p.crossed = true;
-      record(s, out, goal, 'TRAVEL', `Walks to the ${st.to.toLowerCase()}.`);
+      record(s, out, goal, 'TRAVEL', `Walks to the ${st.to.toLowerCase()}.`,
+        first ? { text: "A cyan echo flickers by the crossing. They've found a way through.", objectId: 'bridge' }
+          : st.to === 'CLEARING' && p.crossed ? { text: 'A cyan echo moves toward the clearing. They are going back to their beacon.', objectId: 'lantern' } : undefined);
       return true;
     }
     case 'GATHER_WOOD': p.taken.wood++; p.inventory.fuel++; record(s, out, goal, 'GATHER', 'Gathers dry wood.', { text: 'Far away, a faint chopping sound.', objectId: 'woodpile' }); return true;
@@ -246,6 +248,8 @@ function do_(s: SimulationState, out: DomainEvent[], goal: Goal, st: Step): bool
       if (!r.ok) return false;
       const o = r.record!;
       p.goal = goal;
+      if (st.action === 'OPEN_SLUICE' && r.outcome === 'A') voice(s, out, 'help', 'I opened it. The water is finally falling.', 0);
+      if (st.action === 'RELIGHT' && r.outcome === 'A') voice(s, out, 'clear', 'My beacon is burning again. Can you see it?', Infinity);
       out.push({ type: 'PARTNER_ACTED', goal, text: o.localPhysicalEffect });
       addLog(s, o.localPhysicalEffect, 'partner');
       return true; // the beacon is marked on its next turn: it has to stand at the lookout

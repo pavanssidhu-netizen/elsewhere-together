@@ -23,5 +23,14 @@ function save(name: string, policy: Parameters<typeof runBot>[0], seed: number, 
   console.log(name, 'seed', r.seed, policy, r.outcome, 'cmds', r.commands.length);
 }
 save('win', 'planner', 1, 'WIN');
-save('fade', 'reckless', 1, 'FADE');
+// V5: the fade replay is a genuine cascade (divert -> fire in dry brush -> forced calls), not idleness
+{
+  const { proofScripts } = await import('../src/sim/proofs');
+  const e = new SimEngine(5, undefined, true); const trace: string[] = [];
+  for (const c of proofScripts.B) trace.push(JSON.stringify({ tick: e.getState().v2.tick, cmd: c, events: e.dispatch(c) }));
+  if (e.getState().phase !== 'FADE') throw new Error('proof B did not fade');
+  writeFileSync('src/sim/tests/replays/fade.json', JSON.stringify({ seed: 5, policy: 'proofB', expect: 'FADE', secret: false, commands: proofScripts.B }));
+  writeFileSync('src/sim/tests/replays/fade.trace.jsonl', trace.join('\n') + '\n');
+  console.log('fade seed 5 proofB FADE cmds', proofScripts.B.length);
+}
 save('secret', 'secret_hunter', 1, 'WIN', true);

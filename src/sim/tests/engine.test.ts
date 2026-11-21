@@ -43,9 +43,12 @@ describe('replays (seed + exact legal commands)', () => {
     expect(s.won).toBe(true);
     expect(events.some(x => x.type === 'WIN')).toBe(true);
     expect(s.anchors.every(a => a.aligned && a.playerReady && a.partnerReady)).toBe(true);
-    expect(s.nodes[s.player.nodeId].flags).toContain('BEACON_LIT');
-    expect(s.nodes[s.partner.nodeId].flags).toContain('BEACON_LIT');
-    expect(s.partner.site).toBe('BEACON');
+    // V5: one shared clearing beacon, lit in both worlds; partner walked home to its own beacon; a technique crossed the Thread
+    expect(s.nodes[s.player.nodeId].flags).toContain('LANTERN_LIT');
+    expect(s.nodes[s.partner.nodeId].flags).toContain('LANTERN_LIT');
+    expect(s.partner.site).toBe('CLEARING');
+    expect(s.partner.heard).toBe(true);
+    expect(s.v2.contact).toBe(true);
     expect(s.partner.nodeId).not.toBe(s.player.nodeId);
   });
   it('FADE: CONNECTED -> FRAYING -> LAST_SIGNAL -> FADED, in order, with warnings 1 and 2 before', () => {
@@ -201,8 +204,7 @@ describe('causal model invariants', () => {
   });
   it('anchors have no order lock: GREENHOUSE can be earned before LANTERN, each side independently', () => {
     const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;
-    const n = s.nodes[s.player.nodeId];
-    n.flags = n.flags.filter(f => f !== 'BRIDGE_CLOSED'); s.v2.crossed = true;
+    s.v2.contact = true; // V5: GREENHOUSE = the connection (radio contact) on the player side
     const e = new SimEngine(1, s, true);
     goTo(e, 'anchor_GREENHOUSE', 'OBSERVE');
     const a = e.getState().anchors;
@@ -251,15 +253,15 @@ describe('quality gates (small, fast)', () => {
     expect(e.getState().v2.tick).toBe(0); // planWin never mutates its input
     expect(PLAYER_START_TILE).toBeTruthy(); expect(OBJECT_TILES.planks).toBeTruthy();
   });
-  it('a player who only walks around is warned and then fades (no stranding)', () => {
+  it('idle safety: standing still, or repeating an unavailable action, never fades the Thread by itself', () => {
     const e = new SimEngine(1, undefined, true);
-    const links = new Set<string>();
-    for (let i = 0; i < 400 && e.getState().phase !== 'FADE'; i++) {
-      e.dispatch({ type: 'ADVANCE_PARTNER' });
-      links.add(e.getState().link);
-    }
-    expect(e.getState().phase === 'FADE' || e.getState().won).toBe(true);
-    if (e.getState().phase === 'FADE') expect([...links]).toEqual(expect.arrayContaining(['FRAYING', 'LAST_SIGNAL', 'FADED']));
+    for (let i = 0; i < 400; i++) e.dispatch({ type: 'ADVANCE_PARTNER' });
+    expect(e.getState().phase).not.toBe('FADE');
+    const f = new SimEngine(1, undefined, true);
+    goTo(f, 'lantern', 'RELIGHT');
+    for (let i = 0; i < 300; i++) f.dispatch({ type: 'INTERACT', objectId: 'lantern', action: 'RELIGHT' }); // no fuel: refused every time
+    expect(f.getState().phase).not.toBe('FADE');
+    expect(f.getState().link).toBe('CONNECTED');
   });
   it('resting at a safe site is a real recovery from LAST_SIGNAL', () => {
     const s = JSON.parse(JSON.stringify(createInitialState(1))) as SimulationState;

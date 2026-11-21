@@ -179,3 +179,9 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 
 /* V3: keep captions clear of the corner buttons */
 .caps { top:44px; }
+
+/* V5: Thread call button (bottom-left, always the same place) */
+.callbtn { position:fixed; left:10px; bottom:10px; z-index:8; min-height:44px; background:rgba(239,230,214,.96); color:#24606a; border:1.5px solid #3b3a40; border-left:4px solid var(--cyan,#7be0df); font-family:Georgia,'DejaVu Serif',serif; font-size:14px; padding:6px 10px; }
+.callbtn small { color:#6b6a70; margin-left:4px; }
+.os:not([data-screen=play]) .callbtn { display:none; }
+@media (pointer:coarse), (max-width:760px) { .callbtn { left:auto; right:8px; bottom:auto; top:44px; font-size:12px; } }
