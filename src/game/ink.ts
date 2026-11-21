@@ -14,10 +14,11 @@
  *      (uneven weight), occasional gaps, plus a faint second offset line for the sketchy double stroke.
  */
 // (palette duplicated here on purpose: sprites.ts imports this module, so importing PAL back would be circular)
+import { ART_LIGHT } from './artStyle';
 const PAL = { teal: '#4c8790', mist: '#b2c4ce', amber: '#e6b66e', cyan: '#7be0df', violet: '#a89bdb', coral: '#e47f7c' } as const;
 
 /** Tunable look constants (all in hi-res pixels, i.e. 1/INK_SCALE of a logical pixel). */
-export const INK_CFG = {
+const CFG_LIGHT = {
   wobble: 2.2,        // outline wobble amplitude (domain warp)
   lineWidth: 1.0,     // global ink line weight multiplier
   gap: 0.80,          // noise threshold above which outline breaks (lower = more gaps)
@@ -30,9 +31,21 @@ export const INK_CFG = {
   sponge: 1.7,        // per-pixel jitter of patch edges (rough edge)
   pores: 0.06,        // fraction of sponge pores (light specks) in grey patches
   grain: 0.05,        // paper grain amplitude
+  objectLine: 1.0,    // extra line weight for objects/beings/interactables (calm ground/water/walls use 1)
+  calmTicks: 3,       // grass-tick strokes per ground tile
+  patchThr: 0.5,      // ground patch noise threshold (higher = fewer, larger tone patches)
 };
+// DARK paper: calmer (fewer, larger marks on ground/water/walls) and bolder outlines on objects
+const CFG_DARK: typeof CFG_LIGHT = {
+  ...CFG_LIGHT, wobble: 2.4, lineWidth: 1.0, gap: 0.86, hatchSpacing: 9, hatchWidth: 1.7, hatchAlpha: 0.55, hatchBreak: 0.55,
+  misreg: 3.2, sponge: 1.5, pores: 0.025, grain: 0.035, objectLine: 1.7, calmTicks: 1, patchThr: 0.6,
+};
+export const INK_CFG = ART_LIGHT ? CFG_LIGHT : CFG_DARK;
 
-export const INK_RGB: [number, number, number] = [11, 15, 28]; // #0b0f1c deep midnight ink
+/** Line colour: deep ink on pale paper (INK-LIGHT), pale mist on the dark ground (INK). */
+export const INK_RGB: [number, number, number] = ART_LIGHT ? [11, 15, 28] : [178, 196, 206];
+const DEEP_INK: [number, number, number] = [11, 15, 28]; // #0b0f1c
+const TEAL_RGB: [number, number, number] = [76, 135, 144];
 
 const hexRgb = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
@@ -46,13 +59,25 @@ interface Tone { rgb: [number, number, number]; a: number; soft: boolean; hatch:
 const tone = (hex: string, o: Partial<Tone> = {}): Tone => ({ rgb: hexRgb(hex), a: 1, soft: false, hatch: false, fixed: false, bias: 1.35, ...o });
 const TONES: Tone[] = [];
 TONES[TN.NONE] = tone('#000000', { a: 0, soft: true, bias: 1 });
-TONES[TN.PAPER] = tone(PAL.mist, { soft: true, bias: 1 });
-TONES[TN.HI] = tone('#e8eef1', { fixed: true });
-TONES[TN.GPATCH] = tone('#8eaab3', { soft: true, bias: 1.1 });
-TONES[TN.PATCH] = tone('#7fa3ab', { hatch: true });
-TONES[TN.TEAL] = tone(PAL.teal, { hatch: true });
-TONES[TN.DEEP] = tone('#2a3c57');
-TONES[TN.INK] = tone('#0b0f1c', { fixed: true, bias: 2 });
+if (ART_LIGHT) {
+  TONES[TN.PAPER] = tone(PAL.mist, { soft: true, bias: 1 });
+  TONES[TN.HI] = tone('#e8eef1', { fixed: true });
+  TONES[TN.GPATCH] = tone('#8eaab3', { soft: true, bias: 1.1 });
+  TONES[TN.PATCH] = tone('#7fa3ab', { hatch: true });
+  TONES[TN.TEAL] = tone(PAL.teal, { hatch: true });
+  TONES[TN.DEEP] = tone('#2a3c57');
+  TONES[TN.INK] = tone('#0b0f1c', { fixed: true, bias: 2 });
+  TONES[TN.SHADOW] = tone('#2a3c57', { a: 0.4, soft: true, bias: 1 });
+} else { // dark twilight ground; amber/cyan/violet/coral stay reserved for beings, signals, lit lamps/anchors and the thread
+  TONES[TN.PAPER] = tone('#1b263b', { soft: true, bias: 1 });
+  TONES[TN.HI] = tone('#b2c4ce', { fixed: true });
+  TONES[TN.GPATCH] = tone('#22324b', { soft: true, bias: 1.1 });
+  TONES[TN.PATCH] = tone('#2b4a60', { hatch: true });
+  TONES[TN.TEAL] = tone('#3a6c76', { hatch: true });
+  TONES[TN.DEEP] = tone('#24405a');
+  TONES[TN.INK] = tone('#0b0f1c', { fixed: true, bias: 2 });
+  TONES[TN.SHADOW] = tone('#0b0f1c', { a: 0.4, soft: true, bias: 1 });
+}
 TONES[TN.AMBER] = tone(PAL.amber, { fixed: true });
 TONES[TN.AMBER_H] = tone(PAL.amber, { fixed: true, hatch: true });
 TONES[TN.CYAN] = tone(PAL.cyan, { fixed: true });
@@ -61,7 +86,6 @@ TONES[TN.VIOLET] = tone(PAL.violet, { fixed: true });
 TONES[TN.CORAL] = tone(PAL.coral, { fixed: true });
 TONES[TN.GLOW_V] = tone(PAL.violet, { a: 0.4, soft: true, bias: 1 });
 TONES[TN.GLOW_A] = tone(PAL.amber, { a: 0.32, soft: true, bias: 1 });
-TONES[TN.SHADOW] = tone('#2a3c57', { a: 0.4, soft: true, bias: 1 });
 const PAPER_RGB = TONES[TN.PAPER].rgb;
 
 // ───────────── seeded noise ─────────────
@@ -92,6 +116,7 @@ export interface ComposeOpts {
   gap?: number;
   alphaMul?: number;
   misreg?: number;
+  lineRgb?: [number, number, number]; // outline colour (default INK_RGB)
 }
 
 function lineWeight(a: number, b: number): number {
@@ -160,6 +185,7 @@ export function inkCompose(W: number, H: number, toneAt: (x: number, y: number) 
   const out = new ImageData(W, H), d = out.data;
   const P = o.hatchSpacing ?? C.hatchSpacing, hw = C.hatchWidth / 2;
   const mr = o.misreg ?? C.misreg;
+  const LR = o.lineRgb ?? INK_RGB;
   const fillTone = (x: number, y: number, t0: number): number => {
     const T = TONES[t0];
     if (T.fixed) return t0;
@@ -186,11 +212,14 @@ export function inkCompose(W: number, H: number, toneAt: (x: number, y: number) 
       const m = (((x + y + j) % P) + P) % P, dd = Math.abs(m - P / 2) / 1.414;
       const present = vn((x - y) * 0.08 + k * 7.3, k * 1.7, seed + 56) > (o.gap !== undefined ? 0.5 : C.hatchBreak) ? 1 : 0;
       const hc = Math.min(1, Math.max(0, hw + 0.5 - dd)) * present * C.hatchAlpha;
-      if (hc > 0) { r += (INK_RGB[0] - r) * hc; g += (INK_RGB[1] - g) * hc; b += (INK_RGB[2] - b) * hc; }
+      if (hc > 0) {
+        const light = !ART_LIGHT && (t0 === TN.PATCH || t0 === TN.TEAL), H = light ? INK_RGB : DEEP_INK, k = light ? hc * 0.6 : hc; // dark ground: mist hatch on blue/teal, ink hatch on amber/cyan
+        r += (H[0] - r) * k; g += (H[1] - g) * k; b += (H[2] - b) * k;
+      }
     }
     // outlines
     const c = Math.max(cov[i] * 0.96, cov2[i]);
-    if (c > 0) { r += (INK_RGB[0] - r) * c; g += (INK_RGB[1] - g) * c; b += (INK_RGB[2] - b) * c; a = Math.max(a, c); }
+    if (c > 0) { r += (LR[0] - r) * c; g += (LR[1] - g) * c; b += (LR[2] - b) * c; a = Math.max(a, c); }
     const p = i * 4;
     d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = a * 255 * (o.alphaMul ?? 1);
   }
@@ -220,6 +249,13 @@ const OVERRIDES: Record<string, [string, number][]> = {
   radio_tower: [['#8896a3', TN.DEEP]],
   greenhouse_alive: [['#4c8790', TN.PATCH], ['#35706c', TN.TEAL]],
 };
+
+if (!ART_LIGHT) { // calm areas on the dark ground: few marks, soft tones
+  OVERRIDES.ground = [['#4c8790', TN.GPATCH], ['#16202f', TN.PAPER]];
+  OVERRIDES.water = [['#183049', TN.DEEP], ['#4c8790', TN.TEAL], ['#2d5568', TN.DEEP]];
+  OVERRIDES.road = [['#2a3850', TN.DEEP], ['#4c8790', TN.TEAL], ['#34455f', TN.GPATCH]];
+  OVERRIDES.wall = [['#2b3a55', TN.DEEP], ['#3d4f6d', TN.PATCH]];
+}
 
 function classify(r: number, g: number, b: number, a: number, ov: Map<number, number> | undefined, cache: Map<number, number>): number {
   if (a < 24) return TN.NONE;
@@ -257,7 +293,7 @@ export function inkFrame(src: ImageData, name: string, S: number, seed: number):
     tones[i] = classify(src.data[p], src.data[p + 1], src.data[p + 2], a, ov, cache);
   }
   const patchy = baseName === 'ground_dark' || baseName.startsWith('anchor_');
-  const patchThr = baseName === 'ground_dark' ? 0.56 : 0.5;
+  const patchThr = baseName === 'ground_dark' ? INK_CFG.patchThr + 0.06 : INK_CFG.patchThr;
   const tx = [0, 0, 0, 0], ty = [0, 0, 0, 0], tt = [0, 0, 0, 0], tw = [0, 0, 0, 0];
   const toneAt = (hx_: number, hy_: number): number => {
     const fx = hx_ / S - 0.5, fy = hy_ / S - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), ax = fx - x0, ay = fy - y0;
@@ -275,8 +311,12 @@ export function inkFrame(src: ImageData, name: string, S: number, seed: number):
     if (patchy && best === TN.PAPER && vn(hx_ * 0.045, hy_ * 0.045, seed + 3) > patchThr) return TN.GPATCH;
     return best;
   };
-  const ticks = baseName === 'ground' || baseName === 'ground_dark' || baseName === 'fence' ? 3 : 0;
-  return inkCompose(W, H, toneAt, seed, { opaque, ticks });
+  const calm = baseName === 'ground' || baseName === 'ground_dark' || baseName === 'water' || baseName === 'road' || baseName === 'wall';
+  const ticks = baseName === 'ground' || baseName === 'ground_dark' || baseName === 'fence' ? INK_CFG.calmTicks : 0;
+  // dark paper: calm areas get thin teal lines; objects, beings and interactables get thick pale confident outlines
+  if (ART_LIGHT) return inkCompose(W, H, toneAt, seed, { opaque, ticks });
+  const scenery = baseName === 'tree' || baseName === 'fence'; // decorative: pale but thinner than interactables
+  return inkCompose(W, H, toneAt, seed, { opaque, ticks, lineMul: calm ? 0.8 : scenery ? 1.1 : INK_CFG.objectLine, lineRgb: calm ? TEAL_RGB : INK_RGB });
 }
 
 // ───────────── portraits ─────────────
@@ -328,7 +368,7 @@ export function portrait(who: Being, expr: Expr): HTMLCanvasElement {
     }
     if (polyDist(x, y, mouth) < (strained ? 2.4 : 2.1)) return TN.INK;
     if (strained && polyDist(x, y, crack) < 1.7) return TN.INK;
-    if (polyDist(x, y, wisp) < 2.2) return TN.INK;
+    if (polyDist(x, y, wisp) < 2.2) return ART_LIGHT ? TN.INK : TN.HI;
     if (Math.hypot(x - wisp[2][0], y - wisp[2][1]) < 7) return tip;
     if (!faint) for (let k = 0; k < 2; k++) if (ell(x, y, eyes[k], ey, 11, eyeR) < 1) return TN.HI; // eye whites
     // faint: no eye whites, closed lids

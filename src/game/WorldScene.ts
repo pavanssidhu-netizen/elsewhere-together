@@ -5,9 +5,36 @@ import {
   isBlockedPx, PLAYER_START, VIEW_W, VIEW_H,
 } from './layout';
 import { registerTextures, TEX, TILE as T, FX, animKey, SPRITE_SCALE as SC, GROUND_VARIANTS, type Dir } from './sprites';
-import { ART_INK, INK_SCALE } from './artStyle';
+import { ART_INK, ART_LIGHT, INK_SCALE } from './artStyle';
 
-const INK_LINE = 0x0b0f1c;
+const DEEP_INK = 0x0b0f1c;
+/** Outline colour of overlay marks: deep ink on pale paper, pale mist on the dark ground. */
+const INK_LINE = ART_LIGHT ? DEEP_INK : 0xb2c4ce;
+
+// ---- loose ink helpers (deterministic: hash-based jitter, never Math.random) ----
+const jr = (i: number, s: number): number => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return v - Math.floor(v) - 0.5; };
+type Pt2 = { x: number; y: number };
+/** Rough-edged rectangular patch (a flat tone laid down with a loose hand). */
+function inkPatch(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, col: number, a: number, seed: number, j = 1.6): void {
+  const pts: Pt2[] = []; let i = 0;
+  const edge = (x0: number, y0: number, x1: number, y1: number): void => {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / 5));
+    for (let k = 0; k < n; k++, i++) pts.push({ x: x0 + (x1 - x0) * k / n + jr(i, seed) * j * 2, y: y0 + (y1 - y0) * k / n + jr(i, seed + 5) * j * 2 });
+  };
+  edge(x, y, x + w, y); edge(x + w, y, x + w, y + h); edge(x + w, y + h, x, y + h); edge(x, y + h, x, y);
+  g.fillStyle(col, a); g.fillPoints(pts, true);
+}
+/** Rough ellipse patch. */
+function inkBlob(g: Phaser.GameObjects.Graphics, cx: number, cy: number, rx: number, ry: number, col: number, a: number, seed: number): void {
+  const n = 14, pts: Pt2[] = [];
+  for (let k = 0; k < n; k++) { const t = (k / n) * Math.PI * 2, f = 1 + jr(k, seed) * 0.35; pts.push({ x: cx + Math.cos(t) * rx * f, y: cy + Math.sin(t) * ry * f }); }
+  g.fillStyle(col, a); g.fillPoints(pts, true);
+}
+/** Short loose stroke: two slightly bent segments. */
+function inkStroke(g: Phaser.GameObjects.Graphics, x0: number, y0: number, x1: number, y1: number, col: number, a: number, wd: number, seed: number): void {
+  const mx = (x0 + x1) / 2 + jr(1, seed) * 1.6, my = (y0 + y1) / 2 + jr(2, seed) * 1.6;
+  g.lineStyle(wd, col, a); g.beginPath(); g.moveTo(x0, y0); g.lineTo(mx, my); g.lineTo(x1, y1); g.strokePath();
+}
 
 export interface SceneHooks {
   getState(): Readonly<SimulationState>;
@@ -127,7 +154,7 @@ export class WorldScene extends Phaser.Scene {
     const g = this.add.graphics(); // small decorative bits (tide gauge, flood, glows)
     const R = (col: number, x: number, y: number, ww: number, hh: number, a = 1) => {
       g.fillStyle(col, a); g.fillRect(x, y, ww, hh);
-      if (ART_INK && a >= 0.85 && ww * hh <= 100 && col !== P.midnight) { g.lineStyle(0.5, INK_LINE, 0.9); g.strokeRect(x, y, ww, hh); } // small marks get an ink outline
+      if (ART_INK && a >= 0.85 && ww * hh <= 100 && (col !== P.midnight || !ART_LIGHT)) { g.lineStyle(ART_LIGHT ? 0.5 : 0.7, INK_LINE, 0.9); g.strokeRect(x, y, ww, hh); } // small marks get an ink outline
     };
     const gv = (n: string) => { const v = ART_INK ? (hash(this.tileX, this.tileY) >>> 5) % GROUND_VARIANTS : 0; return v ? `${n}#${v}` : n; }; // INK: break up tiling
     const alive = w.growth >= 2, intact = w.structure >= 2;
@@ -167,11 +194,22 @@ export class WorldScene extends Phaser.Scene {
       for (let i = 0; i < 4; i++) R(i <= w.water ? P.cyan : P.deepBlue, p.x + 2, p.y - 11 + i * 4, 4, 2);
     }
     // flooding of the coast
-    if (w.water >= 2) for (let tx = 6; tx < 18; tx++) R(P.teal, tx * TILE, 8 * TILE, TILE, TILE, w.water >= 3 ? 0.55 : 0.3);
-    if (w.water >= 3) for (let tx = 6; tx < 17; tx++) R(P.teal, tx * TILE, 7 * TILE, TILE, TILE, 0.3);
-    if (w.water >= 3) R(P.teal, 5 * TILE, 5 * TILE, TILE, TILE, 0.45);
-    if (lampLit) { const p = at('lantern'); R(P.amber, p.x - 10, p.y - 14, 20, 20, 0.1); }
-    if (!ghost && w.instability > 40) R(P.violet, 0, 0, VIEW_W, VIEW_H, 0.05);
+    if (ART_INK) {
+      const fl = (tx0: number, tx1: number, ty: number, a: number, sd: number): void => {
+        inkPatch(g, tx0 * TILE, ty * TILE + 1, (tx1 - tx0) * TILE, TILE - 2, P.teal, a, sd, 1.8);
+        for (let k = 0; k < (tx1 - tx0) * 2; k++) { const x = tx0 * TILE + 4 + k * 8 + jr(k, sd) * 3, yy = ty * TILE + 4 + (k % 3) * 4; inkStroke(g, x, yy, x + 5, yy + jr(k, sd + 3), P.mist, 0.55, 0.7, sd + k); }
+      };
+      if (w.water >= 2) fl(6, 18, 8, w.water >= 3 ? 0.5 : 0.28, 3);
+      if (w.water >= 3) { fl(6, 17, 7, 0.3, 4); inkPatch(g, 5 * TILE, 5 * TILE, TILE, TILE, P.teal, 0.4, 5, 1.8); }
+      if (lampLit) { const p = at('lantern'); inkBlob(g, p.x, p.y - 4, 11, 10, P.amber, 0.13, 6); for (let k = 0; k < 8; k++) { const t = k * 0.785 + 0.2, r0 = 12 + jr(k, 9) * 2; inkStroke(g, p.x + Math.cos(t) * r0, p.y - 4 + Math.sin(t) * r0, p.x + Math.cos(t) * (r0 + 4), p.y - 4 + Math.sin(t) * (r0 + 4), P.amber, 0.6, 0.8, k); } }
+      if (!ghost && w.instability > 40) { inkBlob(g, 30, 22, 40, 20, P.violet, 0.07, 1); inkBlob(g, 290, 150, 44, 22, P.violet, 0.07, 2); inkBlob(g, 250, 30, 26, 14, P.violet, 0.05, 3); for (let k = 0; k < 5; k++) inkStroke(g, 20 + k * 60, 90 + jr(k, 4) * 40, 36 + k * 60, 96 + jr(k, 5) * 40, P.violet, 0.2, 0.8, k); }
+    } else {
+      if (w.water >= 2) for (let tx = 6; tx < 18; tx++) R(P.teal, tx * TILE, 8 * TILE, TILE, TILE, w.water >= 3 ? 0.55 : 0.3);
+      if (w.water >= 3) for (let tx = 6; tx < 17; tx++) R(P.teal, tx * TILE, 7 * TILE, TILE, TILE, 0.3);
+      if (w.water >= 3) R(P.teal, 5 * TILE, 5 * TILE, TILE, TILE, 0.45);
+      if (lampLit) { const p = at('lantern'); R(P.amber, p.x - 10, p.y - 14, 20, 20, 0.1); }
+      if (!ghost && w.instability > 40) R(P.violet, 0, 0, VIEW_W, VIEW_H, 0.05);
+    }
     if (!ghost) R(P.midnight, 0, 176, VIEW_W, 4);
     c.add(g);
   }
@@ -237,14 +275,14 @@ export class WorldScene extends Phaser.Scene {
       g.fillStyle(col, isF ? 1 : 0.55);
       const by = p.y - 26 + Math.round(ph * 1.5);
       if (ART_INK) {
-        const pts = [{ x: p.x, y: by - 1.5 }, { x: p.x + 2.6, y: by + 1.5 }, { x: p.x, y: by + 4.5 }, { x: p.x - 2.6, y: by + 1.5 }];
+        const k = ART_LIGHT ? 1 : 1.3, pts = [{ x: p.x, y: by + 1.5 - 3 * k }, { x: p.x + 2.6 * k, y: by + 1.5 }, { x: p.x, y: by + 1.5 + 3 * k }, { x: p.x - 2.6 * k, y: by + 1.5 }];
         g.fillStyle(col, isF ? 1 : 0.8); g.fillPoints(pts, true);
-        g.lineStyle(0.6, INK_LINE, 0.95); g.strokePoints(pts, true);
+        g.lineStyle(ART_LIGHT ? 0.6 : 0.9, INK_LINE, 0.95); g.strokePoints(pts, true);
         if (isF || isS) {
           const rr = 8 + (isF ? 2 + 2 * ph : 0), seed = p.x * 0.37 + p.y;
           const ring = Array.from({ length: 15 }, (_, k) => { const a = (k / 14) * Math.PI * 2.05, r = rr + Math.sin(k * 2.3 + seed) * 0.7; return { x: p.x + Math.cos(a) * r, y: p.y - 3 + Math.sin(a) * r }; });
-          g.lineStyle(1.3, INK_LINE, (isF ? 0.55 : 0.3)); g.strokePoints(ring, false);
-          g.lineStyle(0.6, isF ? P.cyan : P.teal, isF ? 1 : 0.8); g.strokePoints(ring, false);
+          g.lineStyle(ART_LIGHT ? 1.3 : 2.2, DEEP_INK, (isF ? 0.6 : 0.35)); g.strokePoints(ring, false);
+          g.lineStyle(ART_LIGHT ? 0.6 : 1, isF ? P.cyan : P.teal, isF ? 1 : 0.8); g.strokePoints(ring, false);
         }
       } else {
         g.fillRect(p.x - 1, by, 2, 2); g.fillRect(p.x - 2, by + 1, 4, 0); g.fillRect(p.x, by + 2, 1, 1);
@@ -257,8 +295,19 @@ export class WorldScene extends Phaser.Scene {
 
     // lighthouse beam
     if (s.anchors.find(a => a.id === 'LIGHTHOUSE')?.aligned) {
-      const a = 0.12 + 0.06 * Math.sin(t * 0.8);
-      g.fillStyle(P.amber, a); g.fillTriangle(17 * TILE + 8, 7 * TILE - 34, 17 * TILE - 120, 7 * TILE - 70 + Math.sin(t * 0.5) * 20, 17 * TILE - 120, 7 * TILE + 0 + Math.sin(t * 0.5) * 20);
+      const a = 0.12 + 0.06 * Math.sin(t * 0.8), sw = Math.sin(t * 0.5) * 20;
+      const ax = 17 * TILE + 8, ay = 7 * TILE - 34, bx = 17 * TILE - 120, by1 = 7 * TILE - 70 + sw, by2 = 7 * TILE + sw;
+      if (ART_INK) { // loose ink patch with a few bright strokes along the beam
+        const pts: Pt2[] = [{ x: ax, y: ay }];
+        for (let k = 1; k < 6; k++) pts.push({ x: ax + (bx - ax) * k / 6 + jr(k, 21) * 3, y: ay + (by1 - ay) * k / 6 + jr(k, 22) * 3 });
+        pts.push({ x: bx, y: by1 }, { x: bx + jr(7, 3) * 3, y: (by1 + by2) / 2 });
+        pts.push({ x: bx, y: by2 });
+        for (let k = 5; k >= 1; k--) pts.push({ x: ax + (bx - ax) * k / 6 + jr(k, 23) * 3, y: ay + (by2 - ay) * k / 6 + jr(k, 24) * 3 });
+        g.fillStyle(P.amber, a * 1.3); g.fillPoints(pts, true);
+        for (let k = 0; k < 5; k++) { const f = (k + 0.5) / 5, ty2 = by1 + (by2 - by1) * f; inkStroke(g, ax - 6, ay + 2 + k, bx + 10 + k * 3, ty2, P.amber, 0.4, 0.9, 30 + k); }
+      } else {
+        g.fillStyle(P.amber, a); g.fillTriangle(ax, ay, bx, by1, bx, by2);
+      }
     }
 
     // far lamps flicker at drift>=60 (slow, smooth)
@@ -269,7 +318,8 @@ export class WorldScene extends Phaser.Scene {
     }
     // impossible street glimpse at drift>=80 (1s every 12s, faint)
     if (drift >= 80 && !reduce && (t % 12) < 1) {
-      g.fillStyle(P.violet, 0.18); g.fillRect(0, 60, VIEW_W, 6); g.fillRect(140, 0, 6, VIEW_H); g.fillRect(40, 100, 200, 4);
+      if (ART_INK) { inkStroke(g, 0, 62, VIEW_W, 64, P.violet, 0.3, 1.6, 41); inkStroke(g, 143, 0, 144, VIEW_H, P.violet, 0.3, 1.6, 42); inkStroke(g, 40, 102, 240, 100, P.violet, 0.3, 1.4, 43); }
+      else { g.fillStyle(P.violet, 0.18); g.fillRect(0, 60, VIEW_W, 6); g.fillRect(140, 0, 6, VIEW_H); g.fillRect(40, 100, 200, 4); }
     }
 
     // thread tether to partner mote (top right)
@@ -286,14 +336,15 @@ export class WorldScene extends Phaser.Scene {
       let a = 0.7;
       if (strain >= 60 && strain < 80) a = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.2 - i * 0.4));
       if (strain >= 80) a = 0.45;
-      if (ART_INK) { g.lineStyle(1.3, INK_LINE, a * 0.55); g.lineBetween(x0, y0, x1, y1); g.lineStyle(0.6, P.cyan, Math.min(1, a + 0.2)); g.lineBetween(x0, y0, x1, y1); }
+      if (ART_INK) { g.lineStyle(ART_LIGHT ? 1.3 : 2.4, DEEP_INK, a * (ART_LIGHT ? 0.55 : 0.7)); g.lineBetween(x0, y0, x1, y1); g.lineStyle(ART_LIGHT ? 0.6 : 1.1, P.cyan, Math.min(1, a + 0.2)); g.lineBetween(x0, y0, x1, y1); }
       else { g.lineStyle(1, P.cyan, a); g.lineBetween(x0, y0, x1, y1); }
     }
     g.fillStyle(P.cyan, 0.5 + 0.3 * Math.sin(t * 2)); g.fillRect(mote.x - 1, mote.y - 1, 3, 3);
 
     // beings (sprites)
     if (drift >= 60 && !reduce) {
-      g.fillStyle(P.violet, 0.2); g.fillRect(this.px - 11, this.py - 12, 8, 12); g.fillRect(this.px + 5, this.py - 14, 7, 12);
+      if (ART_INK) { inkBlob(g, this.px - 7, this.py - 6, 5, 7, P.violet, 0.22, 51); inkBlob(g, this.px + 8, this.py - 8, 4.5, 7, P.violet, 0.22, 52); }
+      else { g.fillStyle(P.violet, 0.2); g.fillRect(this.px - 11, this.py - 12, 8, 12); g.fillRect(this.px + 5, this.py - 14, 7, 12); }
     }
     const ending = this.endingStart >= 0 ? (time - this.endingStart) / 1000 : -1;
     const flipP = this.dirName === 'side' && this.facing < 0;
@@ -312,7 +363,16 @@ export class WorldScene extends Phaser.Scene {
       const k = Math.min(1, Math.max(0, (ending - 1.2) / 3));
       const ax = 100 + (cx - 6 - 100) * k, bx = 220 + (cx + 6 - 220) * k;
       const bridgeK = Math.min(1, ending / 2.5);
-      for (let i = 0; i < 40 * bridgeK; i++) {
+      if (ART_INK) { // two loose strokes (amber from you, cyan from your partner) that meet in an arc
+        const arc = (u: number): Pt2 => ({ x: 100 + 120 * u + jr(Math.round(u * 40), 61) * 1.4, y: cy - 18 - Math.sin(u * Math.PI) * 24 + jr(Math.round(u * 40), 62) * 1.4 });
+        const n = Math.floor(40 * bridgeK);
+        for (const [col, lo, hi, wd] of [[DEEP_INK, 0, n, 3.2], [P.amber, 0, Math.min(n, 20), 1.6], [P.cyan, 20, n, 1.6]] as const) {
+          if (hi - lo < 1) continue;
+          g.lineStyle(wd, col, col === DEEP_INK ? 0.6 : 0.95); g.beginPath();
+          for (let i = lo; i <= hi; i++) { const q = arc(i / 40); if (i === lo) g.moveTo(q.x, q.y); else g.lineTo(q.x, q.y); }
+          g.strokePath();
+        }
+      } else for (let i = 0; i < 40 * bridgeK; i++) {
         const u = i / 40; const x = 100 + 120 * u; const y = cy - 18 - Math.sin(u * Math.PI) * 24;
         g.fillStyle(i % 2 ? P.cyan : P.amber, 0.8); g.fillRect(Math.round(x), Math.round(y), 2, 2);
       }
@@ -330,7 +390,7 @@ export class WorldScene extends Phaser.Scene {
 
     // rain
     const intensity = pw ? 50 + pw.water * 10 : 60;
-    if (ART_INK) g.lineStyle(0.55, 0x1b263b, 0.4); else g.lineStyle(1, P.mist, 0.28);
+    if (ART_INK) { if (ART_LIGHT) g.lineStyle(0.55, 0x1b263b, 0.4); else g.lineStyle(0.7, P.mist, 0.3); } else g.lineStyle(1, P.mist, 0.28);
     for (let i = 0; i < Math.min(this.rain.length, intensity); i++) {
       const r = this.rain[i];
       r.y += r.v * dt; r.x -= r.v * 0.25 * dt;

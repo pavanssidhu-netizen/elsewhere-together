@@ -2,7 +2,7 @@ import type { SimulationState, Intention } from '../sim/types';
 import { $, esc } from './dom';
 import { renderFork, renderArchive, tpl, type PanelHandlers } from './panels';
 import { applyMeta, band, signalQuality } from './metaEffects';
-import { ART_INK, toggleArtStyle } from '../game/artStyle';
+import { ART_INK, ART_LABEL, toggleArtStyle } from '../game/artStyle';
 import { portrait, type Expr } from '../game/ink';
 
 export interface Handlers extends PanelHandlers {
@@ -105,7 +105,7 @@ export class Shell {
     applyMeta(this.root, s.realityDrift, s.bondStrain, this.reduce);
     $(this.root, '#b-mute').textContent = this.muted ? 'MUSIC OFF' : 'MUSIC ON';
     $(this.root, '#b-reduce').textContent = this.reduce ? 'DISTORTION: LOW' : 'DISTORTION: FULL';
-    $(this.root, '#b-style').textContent = ART_INK ? 'STYLE: INK' : 'STYLE: PIXEL';
+    $(this.root, '#b-style').textContent = `STYLE: ${ART_LABEL}`;
     $(this.root, '#b-mute').setAttribute('aria-pressed', String(this.muted));
     $(this.root, '#b-reduce').setAttribute('aria-pressed', String(this.reduce));
     $(this.root, '#branch').textContent = s.player.nodeId === 'root' ? '000' : s.player.nodeId.replace(/^N/, '');

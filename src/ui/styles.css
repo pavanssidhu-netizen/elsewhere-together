@@ -28,14 +28,15 @@ kbd { font:inherit; font-size:11px; opacity:.7; border:1px solid currentColor; p
 .col-world { display:flex; flex-direction:column; min-height:0; align-items:center; }
 .col-world .panel-h { align-self:stretch; }
 .col-link { display:flex; flex-direction:column; gap:10px; min-height:0; }
-.viewport { position:relative; width:min(100%, calc((100vh - 250px) * 16 / 9)); aspect-ratio:16/9; background:var(--midnight); margin-top:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.viewport { position:relative; flex:1 1 0; min-height:0; width:100%; align-self:stretch; margin-top:8px; background:var(--midnight); overflow:hidden; display:flex; align-items:center; justify-content:center; }
+#game { flex:none; line-height:0; }
 #game canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
 .focus-label { position:absolute; left:6px; bottom:6px; background:rgba(17,22,38,.85); color:var(--amber); padding:2px 6px; font-size:12px; pointer-events:none; }
 .focus-label:empty { display:none; }
 .toast { position:absolute; left:50%; top:8px; transform:translateX(-50%); max-width:92%; background:rgba(17,22,38,.92); border:1px solid var(--amber); color:var(--amber); padding:4px 8px; font-size:12px; text-align:center; opacity:0; transition:opacity .3s; pointer-events:none; }
 .toast.show { opacity:1; }
 .subline { display:none; }
-.actions { display:flex; gap:8px; margin-top:8px; }
+.actions { display:flex; gap:8px; margin:8px 0; flex:none; }
 .touch { display:none; }
 
 .comms { padding-bottom:8px; }
@@ -134,14 +135,15 @@ button.mini { min-height:24px; padding:1px 6px; font-size:11px; }
   .tabs { display:flex; order:3; border-top:2px solid var(--teal); }
   .tabs button { flex:1; min-height:48px; border-width:0 1px; }
   .titlebar { flex-wrap:wrap; } .titlebar .sess { display:none; }
-  .titlebar button { min-height:36px; }
+  .titlebar button { min-height:44px; min-width:44px; }
+  button.mini { min-height:44px; padding:1px 10px; }
   .os { padding-bottom:env(safe-area-inset-bottom); }
   .cols { display:block; padding:4px; overflow:auto; }
   .status { order:2; padding:4px 8px; gap:8px; } .anchors { margin-left:0; gap:8px; } .anchor small { display:none; }
   .col-world, .col-link { width:100%; }
   .os[data-tab="link"] .col-world, .os[data-tab="world"] .col-link, .os[data-tab="archive"] .col-link { display:none; }
   .os[data-tab="link"] .col-link { display:flex; }
-  .viewport { width:100%; }
+  .viewport { width:100%; flex:none; aspect-ratio:16/9; }
   .subline { display:block; width:100%; min-height:40px; padding:6px 8px; font-size:13px; color:var(--cyan); border:1px solid var(--teal); margin-top:6px; }
   .actions { display:none; }
   .touch { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:8px; gap:8px; }
@@ -158,11 +160,27 @@ button.mini { min-height:24px; padding:1px 6px; font-size:11px; }
   .btns button { min-height:44px; }
 }
 
+/* mobile landscape (short): dpad | world | action buttons in one row so the canvas keeps its full height */
+@media (max-width: 849px) and (orientation: landscape) and (max-height: 520px) {
+  .titlebar { flex-wrap:nowrap; padding:2px 8px; } .titlebar .logo { font-size:12px; letter-spacing:1px; }
+  .titlebar button { font-size:11px; padding:2px 6px; white-space:nowrap; }
+  .tabs button { min-height:44px; }
+  .cols { display:flex; flex-direction:column; padding:4px; overflow:auto; }
+  .col-world { flex:1; min-height:0; display:grid; grid-template-columns:auto minmax(0,1fr) 150px; grid-template-rows:auto minmax(0,1fr); column-gap:6px; align-items:stretch; }
+  .col-world .panel-h { grid-column:1 / -1; }
+  .viewport { grid-column:2; grid-row:2; aspect-ratio:auto; width:auto; height:auto; flex:none; margin-top:4px; }
+  .subline { display:none; }
+  .touch { display:contents; }
+  .dpad { grid-column:1; grid-row:2; align-self:center; margin-top:4px; }
+  .tbtns { grid-column:3; grid-row:2; align-self:center; max-width:none; margin-top:4px; }
+}
+
 /* ───────── INK style (html.style-ink). Decorative only: borders/backgrounds, never text, buttons or layout boxes ───────── */
 .ink-defs { position:absolute; width:0; height:0; overflow:hidden; }
 .portrait, .portrait-sm { display:none; }
 .style-ink #game canvas { image-rendering:auto; }
-.style-ink .viewport { background:#b2c4ce; }
+.style-ink .viewport { background:#111626; }
+.style-light .viewport { background:#b2c4ce; }
 .style-ink .talk { display:flex; align-items:center; gap:4px; padding-right:6px; }
 .style-ink .talk .sub { flex:1; min-width:0; padding-left:2px; }
 .style-ink .portrait { display:block; width:132px; height:132px; flex:none; margin:4px 0 0 6px; transition:opacity .6s; }

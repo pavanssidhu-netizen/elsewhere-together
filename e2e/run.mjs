@@ -8,9 +8,9 @@ const PW = process.env.PLAYWRIGHT_PATH || '/home/pavsidh/.npm/_npx/e41f203b7505f
 const { chromium } = createRequire(import.meta.url)(PW);
 // STYLE=ink|pixel (default pixel) selects the art style; SHOTS_DIR overrides where screenshots go
 // (default docs/shots/ for pixel, docs/shots/ink/ for ink).
-const STYLE = process.env.STYLE === 'ink' ? 'ink' : 'pixel';
+const STYLE = ['ink', 'ink-light'].includes(process.env.STYLE) ? process.env.STYLE : 'pixel';
 const PORT = 5199, APP = `http://localhost:${PORT}/?debug=1&style=${STYLE}`;
-const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL(STYLE === 'ink' ? '../docs/shots/ink/' : '../docs/shots/', import.meta.url).pathname;
+const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL(STYLE === 'ink' ? '../docs/shots/ink-dark/' : STYLE === 'ink-light' ? '../docs/shots/ink/' : '../docs/shots/', import.meta.url).pathname;
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const srv = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { cwd: new URL('..', import.meta.url).pathname, stdio: 'ignore' });
@@ -79,7 +79,8 @@ try {
 
   // canvas is integer scaled + pixelated
   const cv = await page.evaluate(() => { const c = document.querySelector('canvas'); return { w: c.clientWidth, h: c.clientHeight, ir: getComputedStyle(c).imageRendering }; });
-  check('canvas integer scale (w%320==0)', cv.w % 320 === 0 && cv.h % 180 === 0, JSON.stringify(cv));
+  // PIXEL: integer multiple of 320x180. INK: integer, or fractional only (16:9 kept) when the integer would leave >12% slack
+  check('canvas scale (PIXEL integer, INK 16:9)', STYLE === 'pixel' ? cv.w % 320 === 0 && cv.h % 180 === 0 : Math.abs(cv.w / cv.h - 16 / 9) < 0.02, JSON.stringify(cv));
 
   // collision: walk left into map border/water and confirm we stop inside bounds
   await page.keyboard.down('a'); await sleep(6000); await page.keyboard.up('a');

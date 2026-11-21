@@ -230,8 +230,11 @@ function fitCanvas(): void {
   const vp = document.getElementById('viewport'); if (!vp) return;
   const w = vp.clientWidth, h = vp.clientHeight;
   if (!w || !h) return;
-  let k = Math.min(w / VIEW_W, h / VIEW_H);
-  if (k >= 2) k = Math.floor(k); // integer upscale when there is room; fractional (still pixelated) on small screens
+  // largest INTEGER multiple of the 320x180 grid that fits; INK may go fractional when the integer leaves >12% slack
+  const kmax = Math.min(w / VIEW_W, h / VIEW_H);
+  let k = Math.floor(kmax);
+  if (k < 1) k = kmax;                                        // smaller than 1x available: shrink (all styles)
+  else if (ART_INK && 1 - k / kmax > 0.12) k = Math.floor(kmax * 100) / 100;
   const c = game.canvas; if (!c) return;
   c.style.width = Math.floor(VIEW_W * k) + 'px'; c.style.height = Math.floor(VIEW_H * k) + 'px';
 }
