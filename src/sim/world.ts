@@ -12,7 +12,7 @@ function ambient(s: SimulationState, out: DomainEvent[], o: Ambient): 'A' | 'B' 
   const key = 'world:' + o.template;
   const occ = s.occurrences[key] ?? 0;
   s.occurrences[key] = occ + 1;
-  const roll = eventRoll(s.seed, parent.id, o.template, occ);
+  const roll = eventRoll(s.seed, parent.id, o.template + ':spark', occ);
   const sel: 'A' | 'B' = roll < o.pA ? 'A' : 'B';
   const evId = eventId(s.events.length + 1);
   const ids: [string, string] = [nodeId(Object.keys(s.nodes).length), nodeId(Object.keys(s.nodes).length + 1)];
