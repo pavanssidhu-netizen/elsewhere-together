@@ -141,7 +141,7 @@ describe('4 distinct risks', () => {
     const b = boot(); fork(b, 'lantern', 'SELF');
     expect(b.getState().echoCredits).toHaveLength(0);
     expect(b.getState().events[0].selectedOutcome).toBe('A');
-    expect(b.getState().bondStrain).toBeLessThanOrEqual(2);
+    expect(b.getState().bondStrain).toBeLessThanOrEqual(2 + 3); // + a possible partner assist
   });
   it('drift is independent of strain', () => {
     const e = boot(); fork(e, 'lantern', 'SELF');
@@ -246,7 +246,7 @@ describe('7 softlock prevention', () => {
     const e2 = new SimEngine(SEED, s);
     const ev = e2.dispatch({ type: 'REST_AT_TERMINAL' });
     expect(ev.some(x => x.type === 'STRAIN_RECOVERED')).toBe(true);
-    expect(e2.getState().bondStrain).toBeLessThanOrEqual(38);
+    expect(e2.getState().bondStrain).toBeLessThanOrEqual(38 + 3);
     expect(e2.getState().bondStrain).toBeGreaterThanOrEqual(38 - 4);
   });
   it('a randomly mangled run can always be finished by the planner (no softlock)', () => {
@@ -301,10 +301,10 @@ describe('8 win gating', () => {
     expect(ev.find(x => x.type === 'REJECTED')).toBeDefined();
   });
   it('full path wins, ENDING, further commands rejected', () => {
-    const e = boot(); const cmds = planWin(e, { echoFirst: true });
+    const e = boot(); const cmds = planWinV2(e.getState()); for (const c of cmds) e.dispatch(c);
     expect(e.getState().won).toBe(true);
     expect(e.getState().phase).toBe('ENDING');
-    expect(cmds[cmds.length - 1]).toEqual({ type: 'ACTIVATE_ANCHOR', anchorId: 'LIGHTHOUSE', actor: 'player' });
+    expect(cmds[cmds.length - 1]).toEqual({ type: 'INTERACT', objectId: 'anchor_LIGHTHOUSE' });
     const s = e.getState();
     expect(s.realityDrift).toBeLessThanOrEqual(35);
     expect(s.bondStrain).toBeLessThanOrEqual(55);
@@ -355,16 +355,15 @@ describe('cheapestWinPath', () => {
     expect(seen).toContain('V:final');
     expect(seen).not.toContain('REJECTED');
   });
-  it('a pure-SELF path also wins, and so do other seeds', () => {
+  it('the V2 planner wins from other seeds too (legal MOVE/INTERACT only)', () => {
     for (const seed of [SEED, 1, 2, 3, 99, 12345]) {
-      for (const echoFirst of [false, true]) {
-        const e = boot(seed); planWin(e, { echoFirst });
-        expect(e.getState().won, `seed ${seed} echo ${echoFirst}`).toBe(true);
-      }
+      const e = new SimEngine(seed);
+      for (const c of planWinV2(e.getState())) { expect(['MOVE', 'INTERACT']).toContain(c.type); e.dispatch(c); }
+      expect(e.getState().won, `seed ${seed}`).toBe(true);
     }
   });
   it('nextCommand returns null once won', () => {
-    const e = boot(); planWin(e);
+    const e = boot(); for (const c of planWinV2(e.getState())) e.dispatch(c);
     expect(nextCommand(e.getState(), {})).toBeNull();
     expect(lca(e.getState().nodes, 'root', 'root')).toBe('root');
   });

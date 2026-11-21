@@ -1,0 +1,132 @@
+{
+  "SELF_ONLY": {
+    "seeds": 500,
+    "win": 42.8,
+    "fade": 0,
+    "timeout": 57.2,
+    "softlock": 0,
+    "medianTicks": 600,
+    "medianInteractions": 3,
+    "echoesDonated": 0,
+    "echoesConsumed": 0,
+    "maxDrift": 16,
+    "maxStrain": 24,
+    "eggRate": 0,
+    "winningAnchorOrders": [
+      "LGL"
+    ],
+    "winningStrategies": 1
+  },
+  "ECHO_HEAVY": {
+    "seeds": 500,
+    "win": 100,
+    "fade": 0,
+    "timeout": 0,
+    "softlock": 0,
+    "medianTicks": 66,
+    "medianInteractions": 20,
+    "echoesDonated": 6.9,
+    "echoesConsumed": 5.9,
+    "maxDrift": 70,
+    "maxStrain": 86,
+    "eggRate": 0,
+    "winningAnchorOrders": [
+      "LGL"
+    ],
+    "winningStrategies": 2
+  },
+  "LET_GO_HEAVY": {
+    "seeds": 500,
+    "win": 94.6,
+    "fade": 0,
+    "timeout": 5.4,
+    "softlock": 0,
+    "medianTicks": 72,
+    "medianInteractions": 11,
+    "echoesDonated": 0,
+    "echoesConsumed": 0,
+    "maxDrift": 70,
+    "maxStrain": 30,
+    "eggRate": 0,
+    "winningAnchorOrders": [
+      "LGL"
+    ],
+    "winningStrategies": 1
+  },
+  "RANDOM_CURIOUS": {
+    "seeds": 500,
+    "win": 2.6,
+    "fade": 0,
+    "timeout": 97.4,
+    "softlock": 0,
+    "medianTicks": 600,
+    "medianInteractions": 409,
+    "echoesDonated": 9.8,
+    "echoesConsumed": 8.7,
+    "maxDrift": 80,
+    "maxStrain": 82,
+    "eggRate": 6.4,
+    "winningAnchorOrders": [
+      "LGL",
+      "GLL"
+    ],
+    "winningStrategies": 13
+  },
+  "PLANNER": {
+    "seeds": 500,
+    "win": 100,
+    "fade": 0,
+    "timeout": 0,
+    "softlock": 0,
+    "medianTicks": 38,
+    "medianInteractions": 10,
+    "echoesDonated": 2,
+    "echoesConsumed": 2,
+    "maxDrift": 30,
+    "maxStrain": 32,
+    "eggRate": 0,
+    "winningAnchorOrders": [
+      "LGL"
+    ],
+    "winningStrategies": 1
+  },
+  "MALICIOUS": {
+    "seeds": 500,
+    "win": 0,
+    "fade": 100,
+    "timeout": 0,
+    "softlock": 0,
+    "medianTicks": 78,
+    "medianInteractions": 47,
+    "echoesDonated": 19.2,
+    "echoesConsumed": 17.8,
+    "maxDrift": 80,
+    "maxStrain": 100,
+    "eggRate": 0,
+    "winningAnchorOrders": [],
+    "winningStrategies": 0
+  },
+  "NOVICE": {
+    "seeds": 500,
+    "win": 59.4,
+    "fade": 0,
+    "timeout": 40.6,
+    "softlock": 0,
+    "medianTicks": 180,
+    "medianInteractions": 131,
+    "echoesDonated": 0.9,
+    "echoesConsumed": 0.6,
+    "maxDrift": 72,
+    "maxStrain": 68,
+    "eggRate": 0,
+    "winningAnchorOrders": [
+      "LGL"
+    ],
+    "winningStrategies": 8
+  },
+  "_meta": {
+    "seeds": 500,
+    "maxTicks": 600,
+    "note": "softlock = planner cannot win from first-warning (FADE) or final (TIMEOUT) state"
+  }
+}

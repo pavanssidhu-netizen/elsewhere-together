@@ -8,7 +8,7 @@ import { refreshAnchors } from './anchors';
 import { eventId, nodeId } from './rng';
 
 export const NODE_SOFT_CAP = 48;        // archive size target
-export const PARTNER_EVENT_NODE_CAP = 30; // partner stops creating optional events beyond this
+export const PARTNER_EVENT_NODE_CAP = 20; // partner stops creating optional events beyond this
 export const ECHO_QUEUE_CAP = 2;
 export const REST_RECOVERY = 12;
 export const OVERSTRAIN = 85;           // partner.stable = strain < OVERSTRAIN
@@ -69,10 +69,6 @@ export function applyEvent(
     };
     parent.children.push(ids[i]);
   });
-  if (actor === 'partner' && s.v2.partnerDrag) {
-    for (const id of ids) s.nodes[id].world = applyDelta(s.nodes[id].world, s.v2.partnerDrag);
-    delete s.v2.partnerDrag;
-  }
   const active = ids[selected === 'A' ? 0 : 1];
   actorState.nodeId = active;
   s.occurrences[t.id] = (s.occurrences[t.id] ?? 0) + 1;

@@ -22,12 +22,13 @@ function helps(t: EventTemplate, r: Req): boolean {
 
 /** Template the partner could use to improve its own world toward an unmet anchor requirement. */
 export function pickAssistTemplate(s: SimulationState): EventTemplate | null {
-  if (Object.values(s.nodes).filter(n => n.owner === 'partner').length >= PARTNER_EVENT_NODE_CAP) return null;
+  const capped = Object.values(s.nodes).filter(n => n.owner === 'partner').length >= PARTNER_EVENT_NODE_CAP;
   const reqs = unmetPartnerReqs(s);
   const credits = pendingEchoes(s);
   const useful = (t: EventTemplate) => reqs.some(r => helps(t, r));
   const funded = TEMPLATES.find(t => useful(t) && credits.some(c => c.kind === t.echoKind));
-  return funded ?? TEMPLATES.find(useful) ?? null;
+  // out of own attempts: only an echo (a gift from the player) can still move them
+  return funded ?? (capped ? null : TEMPLATES.find(useful) ?? null);
 }
 
 export function isDangerous(s: SimulationState): boolean {
@@ -63,7 +64,7 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], requested?: 
     scores.push(['SEEK', 45 + 0.45 * s.realityDrift - 0.2 * s.bondStrain + bias('SEEK') + noise()]);
   }
   if (assistT) {
-    scores.push(['ASSIST', 20 + 0.25 * s.realityDrift + (playerBlocked ? 25 : 0) + (fundedAssist ? ECHO_BONUS : 0) + bias('ASSIST') + noise()]);
+    scores.push(['ASSIST', TUNING.ASSIST_BASE + 0.25 * s.realityDrift + (playerBlocked ? 25 : 0) + (fundedAssist ? ECHO_BONUS : 0) + bias('ASSIST') + noise()]);
   }
   if (eligible) scores.push(['ANCHOR', 110 + noise()]);
 
@@ -86,9 +87,14 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], requested?: 
   } else if (goal === 'ASSIST' && assistT) {
     const credit = pendingEchoes(s).find(c => c.kind === assistT.echoKind);
     const occ = s.occurrences[assistT.id] ?? 0;
-    const roll = defaultOutcomeFor(s.seed, s.partner.nodeId, assistT, partnerNode.world, occ);
+    const owed = -((s.v2.partnerDrag as Record<string, number> | undefined)?.[assistT.echoKind] ?? 0);
+    const roll = defaultOutcomeFor(s.seed, s.partner.nodeId, assistT, partnerNode.world, occ, false, TUNING.DRAG_PENALTY * owed);
     const selected = credit ? assistT.selfPreferredOutcome : roll;
-    if (credit) credit.consumed = true;
+    if (credit) {
+      credit.consumed = true;
+      const d = s.v2.partnerDrag as Record<string, number> | undefined;
+      if (d && d[credit.kind]) d[credit.kind] = Math.min(0, d[credit.kind] + 1); // what you gave repays what you kept
+    }
     else s.bondStrain = clamp100(s.bondStrain + TUNING.ASSIST_STRAIN);
     const rec = applyEvent(s, 'partner', assistT.id, 'LET_GO', selected, {
       reason: credit

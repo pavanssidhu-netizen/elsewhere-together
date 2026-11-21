@@ -55,7 +55,8 @@ export class SimEngine {
   private state: SimulationState;
   private listeners = new Set<Listener>();
 
-  constructor(seed: number = DEFAULT_SEED, saved?: SimulationState) {
+  /** inPlace: skip the per-dispatch defensive clone (bots/planner only; a rejected command may leave harmless log noise). */
+  constructor(seed: number = DEFAULT_SEED, saved?: SimulationState, private inPlace = false) {
     this.state = saved ? clone(saved) : createInitialState(seed);
   }
 
@@ -90,7 +91,7 @@ export class SimEngine {
   }
 
   dispatch(cmd: Command): DomainEvent[] {
-    const next = clone(this.state);
+    const next = this.inPlace ? this.state : clone(this.state);
     const out: DomainEvent[] = [];
     const ok = reduce(next, cmd, out);
     if (!ok) {

@@ -30,7 +30,7 @@ export function stateDifference(nodes: Nodes, a: string, b: string): number {
 
 export function calculateDrift(s: Pick<SimulationState, 'nodes' | 'player' | 'partner' | 'anchors'> & { v2?: { calm?: number } }): number {
   const aligned = s.anchors.filter(a => a.aligned).length;
-  const d = TUNING.DRIFT_LINEAGE * lineageDistance(s.nodes, s.player.nodeId, s.partner.nodeId)
+  const d = TUNING.DRIFT_LINEAGE * Math.min(TUNING.DRIFT_LINEAGE_CAP, lineageDistance(s.nodes, s.player.nodeId, s.partner.nodeId))
     + TUNING.DRIFT_STATE * stateDifference(s.nodes, s.player.nodeId, s.partner.nodeId)
     - TUNING.DRIFT_ANCHOR * aligned - (s.v2?.calm ?? 0);
   return Math.max(0, Math.min(100, d));
