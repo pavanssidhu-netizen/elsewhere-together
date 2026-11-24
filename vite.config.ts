@@ -7,5 +7,5 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
     rollupOptions: { output: { manualChunks: (id: string) => (id.includes('node_modules/phaser') ? 'phaser' : undefined) } },
   },
-  test: { include: ['src/sim/tests/**/*.test.ts'] },
+  test: { include: ['src/sim/tests/**/*.test.ts', 'src/flow/**/*.test.ts'] },
 } as any);
