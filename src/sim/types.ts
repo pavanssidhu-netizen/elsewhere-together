@@ -12,7 +12,7 @@ export type AnchorId = 'LANTERN' | 'GREENHOUSE' | 'LIGHTHOUSE';
 export type AnchorKind = 'HEAR' | 'FIND' | 'MEET';
 export type PhysicalAction =
   | 'RELIGHT' | 'BRACE' | 'OPEN_SLUICE' | 'PROTECT' | 'HARVEST' | 'TUNE' | 'HOLD_SIGNAL' | 'OBSERVE' | 'BEACON'
-  | 'GATHER' | 'REST' | 'DIVERT_WATER' | 'READ' | 'FOLLOW_ALTERNATE';
+  | 'GATHER' | 'REST' | 'DIVERT_WATER' | 'READ' | 'FOLLOW_ALTERNATE' | 'CLOSE_SLUICE';
 export type LinkState = 'CONNECTED' | 'FRAYING' | 'LAST_SIGNAL' | 'FADED';
 
 export type Stats = Record<WorldStat, number> & { instability: number };
@@ -96,12 +96,39 @@ export interface ActorState {
   plan?: string;            // partner: current plan key (plan changes emit a trace)
   heard?: boolean;          // partner: understood at least one technique sent through the Thread
   lastWait?: string;        // partner: last waiting line shown (dedupe)
+  hesitate?: number;        // partner: turns spent eyeing dry brush before lighting it
+  gateWait?: number;        // partner: ticks spent noticing its own dead set before it acts on it
 }
 
 export interface AnchorState {
   id: AnchorId; kind: AnchorKind;
   playerReady: boolean; partnerReady: boolean; aligned: boolean;       // legacy names (WorldScene reads these)
   playerPhysical: boolean; partnerPhysical: boolean; coordinated: boolean; // contract names (always equal to the above)
+}
+
+// ---- Director's Cut: time split (Sam = PAST, Jensen = FUTURE) and the seeded puzzle configuration ----
+export type Era = 'PAST' | 'FUTURE';
+export type TemporalKey = 'bridge' | 'water' | 'garden' | 'fire' | 'wood' | 'plank';
+export interface TemporalChange { key: TemporalKey; from: ActorId; to: ActorId; tick: number; text: string; echo: string }
+export interface TemporalState {
+  ledger: TemporalChange[];            // every change the PAST actor made that the FUTURE actor inherited (append-only, once per change)
+  seen: Record<string, boolean>;       // persistent facts of the PAST actor already propagated
+  woodSeen: number; plankSeen: number; // pile counters already propagated
+  applied: string[];                   // inherited facts the FUTURE node must keep (re-applied after a retrace)
+}
+/** Starting condition of ONE world (the past or the future). Rules are identical in every config; only the starting facts differ. */
+export interface WorldStart {
+  bridgeBroken: boolean; waterHigh: boolean; smokeRoad: boolean; dryBrush: boolean; fire: boolean;
+  woodTaken: number; plankTaken: number;     // pickups already used from the local piles (3 = none left)
+}
+export interface PuzzleConfig {
+  template: string;
+  character: 'SAM' | 'JENSEN';
+  layout: 'A' | 'B' | 'C' | 'D';             // where the woodpile / planks lie on the player's map
+  past: WorldStart; future: WorldStart;
+  sluiceStuck: boolean;                      // the gate will not move until the wheel has been looked at
+  partnerClue: 'none' | 'bridge' | 'sluice' | 'garden'; // what the autonomous brother has already worked out
+  sig: string;
 }
 
 export type Phase = 'BOOT' | 'EXPLORING' | 'FORK' | 'ARCHIVE' | 'ENDING' | 'FADE';
@@ -136,6 +163,11 @@ export interface SimulationState {
   retraceCount: number;
   won: boolean;
   v2: V2State;
+  // Director's Cut (absent in classic V5 runs: all time-split rules are then inactive)
+  cfg?: PuzzleConfig;
+  era?: { player: Era; partner: Era };
+  temporal?: TemporalState;
+  partnerFrozen?: boolean;   // test hook: the autonomous brother does nothing (used to prove his actions matter)
 }
 
 export type Identity = 'amber' | 'cyan';
@@ -145,7 +177,7 @@ export interface JourneyStep {
   actor: ActorId;
   fromNodeId: string;
   toNodeId: string;
-  action: 'FORK' | 'ACT' | 'TRAVEL' | 'WAIT' | 'REFUSE' | 'LEARN' | 'RETRACE' | 'ANCHOR' | 'STABILISE' | 'REUNION';
+  action: 'FORK' | 'ACT' | 'TRAVEL' | 'WAIT' | 'REFUSE' | 'LEARN' | 'RETRACE' | 'ANCHOR' | 'STABILISE' | 'REUNION' | 'TEMPORAL';
   eventInstanceId?: string;
   cause?: string;
   effect?: string;
@@ -173,6 +205,7 @@ export interface V2State {
   shared: string[];             // techniques already sent
   lastRecoveryTick: number;
   contact?: boolean;            // radio contact made (information; survives retrace)
+  pendingContact?: boolean;     // your clear tone went out, but the receiving set (the future) has no power yet
 }
 
 export type Command =
@@ -208,6 +241,7 @@ export type DomainEvent =
   | { type: 'FADE' }
   | { type: 'WARNING'; level: 1 | 2 | 3; text: string }
   | { type: 'WORLD_CHANGED'; objectId: string; text: string }
+  | { type: 'TEMPORAL'; change: TemporalChange; toActor: ActorId; text: string; objectId: string }
   | { type: 'PARTNER_TRACE'; text: string; objectId?: string }
   | { type: 'REALM'; realm: 'TOWN' | 'ALIEN' }
   | { type: 'REJECTED'; reason: string };

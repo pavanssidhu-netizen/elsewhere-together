@@ -4,7 +4,7 @@ import type { Stats } from '../sim/types';
 export type GridCell = { tx: number; ty: number };
 export type Realm = 'TOWN' | 'ALIEN';
 
-export const TILE = 16;
+export const TILE = 32;
 export const MAP_W = 20;
 export const MAP_H = 11;
 
@@ -44,6 +44,18 @@ export const OBJECT_TILES: Record<string, GridCell> = {
   wheel: cell(9, 8),       // waterwheel beside the sluice, on the river
   inscription: cell(13, 8), // carved stone on the sand path: only reachable when the water is diverted
 };
+
+/** Seeded layouts (Director's Cut): where the wood and the planks lie. A node carries it as the flag LAYOUT_x. */
+export const LAYOUTS: Record<'A' | 'B' | 'C' | 'D', Partial<Record<'woodpile' | 'planks', GridCell>>> = {
+  A: {},
+  B: { woodpile: cell(17, 2) },
+  C: { planks: cell(16, 5) },
+  D: { woodpile: cell(17, 2), planks: cell(15, 5) },
+};
+export function tileOf(id: string, flags: readonly string[]): GridCell {
+  for (const k of ['B', 'C', 'D'] as const) if (flags.includes('LAYOUT_' + k)) { const o = LAYOUTS[k][id as 'woodpile' | 'planks']; if (o) return o; }
+  return OBJECT_TILES[id];
+}
 
 export const PLAYER_START_TILE: GridCell = cell(7, 5);
 
@@ -96,22 +108,22 @@ function reachableTiles(w: boolean[][], origin: GridCell): Map<string, GridCell 
 const near = (a: GridCell, b: GridCell) => Math.max(Math.abs(a.tx - b.tx), Math.abs(a.ty - b.ty)) <= 1;
 
 export function getNearbyInteractables(world: Stats, flags: string[], origin: GridCell, realm: Realm = 'TOWN'): string[] {
-  void world; void flags; void realm;
-  return Object.keys(OBJECT_TILES).filter(id => near(origin, OBJECT_TILES[id]));
+  void world; void realm;
+  return Object.keys(OBJECT_TILES).filter(id => near(origin, tileOf(id, flags)));
 }
 
 export function getReachableObjects(world: Stats, flags: string[], origin: GridCell, realm: Realm = 'TOWN'): string[] {
   const seen = reachableTiles(getWalkability(world, flags, realm), origin);
   return Object.keys(OBJECT_TILES).filter(id => [...seen.keys()].some(k => {
     const [tx, ty] = k.split(',').map(Number);
-    return near(cell(tx, ty), OBJECT_TILES[id]);
+    return near(cell(tx, ty), tileOf(id, flags));
   }));
 }
 
 /** Shortest walkable path (excluding `from`) to a tile within interaction range of the object; [] if already in range. */
 export function pathTo(world: Stats, flags: string[], from: GridCell, objectId: string, realm: Realm = 'TOWN'): GridCell[] | null {
-  const obj = OBJECT_TILES[objectId];
-  if (!obj) return null;
+  if (!OBJECT_TILES[objectId]) return null;
+  const obj = tileOf(objectId, flags);
   if (near(from, obj)) return [];
   const prev = reachableTiles(getWalkability(world, flags, realm), from);
   let best: GridCell | null = null;

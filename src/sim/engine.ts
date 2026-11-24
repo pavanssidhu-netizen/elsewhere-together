@@ -1,8 +1,8 @@
 import type {
-  ActorState, AnchorId, AnchorKind, Choice, Command, DomainEvent, Intention, PhysicalAction, SimulationState, Site, Stats, ThreadMessage, V2State,
+  ActorState, AnchorId, AnchorKind, Choice, Command, DomainEvent, Intention, PhysicalAction, PuzzleConfig, SimulationState, Site, Stats, ThreadMessage, V2State,
 } from './types';
 import {
-  OBJECT_SITE, OBJECT_TILES, PLAYER_START_TILE, TILE, canWalk, getNearbyInteractables, getReachableObjects, getWalkability, type GridCell,
+  OBJECT_SITE, OBJECT_TILES, PLAYER_START_TILE, TILE, canWalk, tileOf, getNearbyInteractables, getReachableObjects, getWalkability, type GridCell,
 } from '../world/topology';
 import { TUNING } from './tuning';
 import { isValidRetrace } from './branches';
@@ -14,6 +14,8 @@ import {
 import { ALIEN_TEXT, HINTS, INTRO, STONES_TEXT, TERMINAL_TEXT, TOO_FAR, VOICE_LINES } from '../content/dialogue';
 import { objectiveHint, planWin } from './planner';
 import { ignition, worldTick } from './world';
+import { partnerKnowledge, startWorld } from './puzzle';
+import { closeGate, initTemporal, reapplyLedger, spawnNode, syncTemporal } from './temporal';
 
 export { TEMPLATES, objectiveHint, planWin };
 
@@ -30,13 +32,13 @@ export const DEFAULT_ACTION: Record<string, PhysicalAction> = {
 };
 const ALLOWED: Record<string, PhysicalAction[]> = {
   lantern: ['RELIGHT', 'OBSERVE'], bridge: ['BRACE', 'OBSERVE'], radio: ['TUNE', 'HOLD_SIGNAL', 'OBSERVE'],
-  greenhouse: ['PROTECT', 'HARVEST', 'REST', 'OBSERVE'], tide: ['DIVERT_WATER', 'FOLLOW_ALTERNATE', 'OPEN_SLUICE', 'OBSERVE'], wheel: ['OBSERVE'], inscription: ['READ', 'OBSERVE'], planks: ['GATHER', 'OBSERVE'],
+  greenhouse: ['PROTECT', 'HARVEST', 'REST', 'OBSERVE'], tide: ['DIVERT_WATER', 'FOLLOW_ALTERNATE', 'OPEN_SLUICE', 'CLOSE_SLUICE', 'OBSERVE'], wheel: ['OBSERVE'], inscription: ['READ', 'OBSERVE'], planks: ['GATHER', 'OBSERVE'],
   woodpile: ['GATHER', 'OBSERVE'], stones: ['REST', 'OBSERVE'], thread_terminal: ['REST', 'OBSERVE'],
   anchor_LANTERN: ['OBSERVE', 'REST'], anchor_GREENHOUSE: ['OBSERVE', 'REST'], anchor_LIGHTHOUSE: ['BEACON', 'OBSERVE'],
 };
 const LABEL: Record<PhysicalAction, string> = {
   RELIGHT: 'Relight the beacon', DIVERT_WATER: 'Divert the water', FOLLOW_ALTERNATE: 'Follow the other history', READ: 'Read the carving', BRACE: 'Brace the bridge', OPEN_SLUICE: 'Open the sluice', PROTECT: 'Protect the seedlings', HARVEST: 'Harvest dry fibre',
-  TUNE: 'Tune the radio', HOLD_SIGNAL: 'Hold the signal', OBSERVE: 'Look closely', BEACON: 'Light the beacon', GATHER: 'Gather', REST: 'Rest here',
+  CLOSE_SLUICE: 'Push the gate back', TUNE: 'Tune the radio', HOLD_SIGNAL: 'Hold the signal', OBSERVE: 'Look closely', BEACON: 'Light the beacon', GATHER: 'Gather', REST: 'Rest here',
 };
 
 /** Deprecated V2 alias: INTERACT.choice -> PhysicalAction. LET_GO = the object's default, SELF = the "take" verb, ECHO = hold the signal. */
@@ -46,7 +48,9 @@ export function mapLegacyChoice(obj: string, c: Choice): PhysicalAction {
   return DEFAULT_ACTION[obj] ?? 'OBSERVE';
 }
 
-export function createInitialState(seed: number): SimulationState {
+export interface InitOptions { character?: 'SAM' | 'JENSEN'; cfg?: PuzzleConfig }
+
+export function createInitialState(seed: number, opts: InitOptions = {}): SimulationState {
   const base: Stats = { light: 0, water: 2, structure: 0, signal: 0, growth: 1, instability: 0 };
   const actor = (id: 'player' | 'partner', nodeId: string): ActorState => ({
     id, nodeId, x: 0, y: 96, stable: true, inventory: { fuel: 0, plank: 0 }, taken: { wood: 0, plank: 0 },
@@ -78,9 +82,11 @@ export function createInitialState(seed: number): SimulationState {
       ineffective: 0, sig: '', tuneMotif: [], secretFound: false, learned: [], shared: [], lastRecoveryTick: -99,
     },
   };
+  if (opts.cfg) applyConfig(s, opts.cfg);
   s.partner.site = 'CLEARING'; s.partner.goal = 'REACH_NEXT_SITE'; s.partner.knowledge = ['relight', 'brace_bridge', 'protect_garden'];
   s.partner.stuck = 0; s.partner.crossed = false; s.partner.priority = null; s.partner.lastSeenMsg = 0; s.partner.refusals = 0;
-  s.partner.taken.plank = TUNING.PILE; // planks washed away in the partner's forest
+  if (!opts.cfg) s.partner.taken.plank = TUNING.PILE; // planks washed away in the partner's forest
+  else s.partner.knowledge = partnerKnowledge(opts.cfg);
   s.player.x = PLAYER_START_TILE.tx * TILE + TILE / 2; s.player.y = PLAYER_START_TILE.ty * TILE + TILE / 2;
   s.partner.x = 256; s.partner.y = 96;
   s.v2.journey.push({ seq: 1, tick: 0, actor: 'player', fromNodeId: 'root', toNodeId: 'N0001', action: 'FORK', eventInstanceId: 'E0001', cause: s.events[0].reason, effect: 'You wake alone in your own forest.' });
@@ -90,6 +96,20 @@ export function createInitialState(seed: number): SimulationState {
   return s;
 }
 
+/** Director's Cut: the two worlds start from the config's facts; Sam is the PAST, Jensen the FUTURE. */
+function applyConfig(s: SimulationState, cfg: PuzzleConfig): void {
+  const sam = cfg.character === 'SAM';
+  s.cfg = cfg;
+  s.era = { player: sam ? 'PAST' : 'FUTURE', partner: sam ? 'FUTURE' : 'PAST' };
+  const mine = sam ? cfg.past : cfg.future, theirs = sam ? cfg.future : cfg.past;
+  for (const [id, st, who] of [['N0001', mine, s.player], ['N0002', theirs, s.partner]] as const) {
+    const w = startWorld(st, cfg.layout);
+    s.nodes[id].flags = w.flags; s.nodes[id].world = { ...s.nodes[id].world, water: w.water };
+    who.taken = { wood: st.woodTaken, plank: st.plankTaken };
+  }
+  s.temporal = initTemporal(s);
+}
+
 type Listener = (s: Readonly<SimulationState>, ev: DomainEvent[]) => void;
 
 export class SimEngine {
@@ -97,8 +117,8 @@ export class SimEngine {
   private listeners = new Set<Listener>();
 
   /** inPlace: skip the per-dispatch defensive clone (bots/planner only). */
-  constructor(seed: number = DEFAULT_SEED, saved?: SimulationState, private inPlace = false) {
-    this.state = saved ? clone(saved) : createInitialState(seed);
+  constructor(seed: number = DEFAULT_SEED, saved?: SimulationState, private inPlace = false, init?: InitOptions) {
+    this.state = saved ? clone(saved) : createInitialState(seed, init);
   }
 
   getState(): Readonly<SimulationState> { return this.state; }
@@ -131,6 +151,7 @@ export class SimEngine {
     const out: DomainEvent[] = [];
     const before = next.anchors.map(a => a.aligned);
     const ok = reduce(next, cmd, out);
+    if (ok && next.era) { syncTemporal(next, out); checkContact(next, out); }
     if (!ok) {
       const rej = out.find(e => e.type === 'REJECTED');
       if (rej && rej.type === 'REJECTED') addLog(next, rej.reason, 'hint');
@@ -184,7 +205,7 @@ export function siteOfPlayer(s: Readonly<SimulationState>): Site {
 }
 
 function reduce(s: SimulationState, cmd: Command, out: DomainEvent[]): boolean {
-  if (cmd.type === 'RESTART') { Object.assign(s, createInitialState(cmd.seed)); return true; }
+  if (cmd.type === 'RESTART') { Object.assign(s, createInitialState(cmd.seed, s.cfg ? { cfg: s.cfg } : {})); return true; }
   if (cmd.type === 'SET_POSITION') {
     if (Number.isFinite(cmd.x) && Number.isFinite(cmd.y)) { s.player.x = cmd.x; s.player.y = cmd.y; }
     return true;
@@ -265,7 +286,7 @@ export interface ActionOption { action: PhysicalAction; label: string; enabled: 
 export function availableActions(s: Readonly<SimulationState>, obj: string): ActionOption[] {
   const list = ALLOWED[obj] ?? [];
   const sc = s as SimulationState;
-  const opts = list.filter(a => (a !== 'OBSERVE' || obj === 'lantern') && a !== 'OPEN_SLUICE').map(a => {
+  const opts = list.filter(a => (a !== 'OBSERVE' || obj === 'lantern') && a !== 'OPEN_SLUICE' && (a !== 'CLOSE_SLUICE' || hasFlag(sc, 'player', 'GATE_INHERITED'))).map(a => {
     const clue = blockedClue(sc, obj, a);
     return { action: a, label: obj === 'lantern' && a === 'OBSERVE' ? 'Check the beacon' : LABEL[a], enabled: !clue, ...(clue ? { clue } : {}) };
   });
@@ -286,6 +307,7 @@ function blockedClue(s: SimulationState, obj: string, a: PhysicalAction): string
   }
   if (a === 'OBSERVE') return null;
   if (a === 'FOLLOW_ALTERNATE') return alternateOf(s) ? null : 'There is no other history to follow from here.';
+  if (a === 'CLOSE_SLUICE') return hasFlag(s, 'player', 'GATE_INHERITED') ? null : hasFlag(s, 'player', 'WATER_DIVERTED') ? 'You opened this gate yourself. The way back is the other history, not the gate.' : 'The gate is shut already.';
   if (a === 'READ') return null;
   if (!spec) return null;
   return spec.blocked({ s, who: 'player', prepared: false });
@@ -330,6 +352,7 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     if (obj.startsWith('anchor_')) return markAnchor(s, obj.slice(7) as AnchorId, out);
     if (obj === 'lantern') { markExamined(s, obj); out.push({ type: 'WORLD_CHANGED', objectId: 'lantern', text: beaconStatus(s) }); if (checkWin(s, out)) return true; return afterAction(s, out, false, true); }
     if (!first) out.push({ type: 'WORLD_CHANGED', objectId: obj, text: describe(s, obj) });
+    if (obj === 'wheel' && s.cfg?.sluiceStuck && !v.examined.includes('wheel')) { out.push({ type: 'WORLD_CHANGED', objectId: obj, text: 'A pin is jammed through the wheel shaft. You work it out, and the gate beside it will move now.' }); effective = true; }
     markExamined(s, obj);
     if (!effective) { v.ineffective++; if (v.ineffective >= 3) { v.ineffective = 0; const h = objectiveHint(s); if (h.text) out.push({ type: 'WORLD_CHANGED', objectId: h.objectId, text: h.text }); } }
     else v.ineffective = 0;
@@ -360,6 +383,20 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     markExamined(s, obj);
     return retraceTo(s, tgt, out, TUNING.ALT_COST, 'You step back to the fork and follow the other history. What you learned comes with you.');
   }
+  if (action === 'CLOSE_SLUICE') {
+    const why = blockedClue(s, obj, action);
+    if (why) return clueReject(s, out, why);
+    markExamined(s, obj);
+    const from = s.player.nodeId;
+    spawnNode(s, 'player', closeGate);
+    const txt = 'You push the gate back into its slot. The river finds its old bed and the wheel starts to turn.';
+    addStep(s, { actor: 'player', fromNodeId: from, toNodeId: s.player.nodeId, action: 'ACT', cause: 'The gate had been opened in the past; you closed it in your own time.', effect: txt });
+    addHistory(s, 'player', 'CROSSING', 'CLOSE_SLUICE', undefined, txt);
+    out.push({ type: 'WORLD_CHANGED', objectId: obj, text: txt });
+    snapPlayer(s, out);
+    s.turn++; partnerTurn(s, out);
+    return afterAction(s, out, true, true);
+  }
   if (action === 'GATHER') {
     const t = s.player.taken;
     if ((obj === 'woodpile' ? t.wood : t.plank) >= TUNING.PILE) return clueReject(s, out, 'The pile is picked clean.');
@@ -384,17 +421,35 @@ function doInteract(s: SimulationState, obj: string, requested: PhysicalAction |
     if (m.length >= 2 && m[m.length - 1] === m[m.length - 2] && v.examined.includes('stones')) out.push({ type: 'WORLD_CHANGED', objectId: 'stones', text: 'The same tone again, and the stones hum back the same three notes.' });
   }
   if (obj === 'radio' && (action === 'TUNE' || action === 'HOLD_SIGNAL') && r.outcome === 'A' && !v.contact) {
-    v.contact = true;
-    recompute(s);
-    out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'A second note answers through the Thread. Under it, a voice that is theirs.' });
-    voice(s, out, 'clear', partnerReport(s), 0);
-    out.push({ type: 'PARTNER_TRACE', objectId: 'radio', text: 'I hear you. ' + partnerReport(s) });
+    if (receiverPowered(s)) grantContact(s, out);
+    else {
+      v.pendingContact = true;
+      out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'Your clear tone goes out, and only static comes back. Their set is dead: the wheel on their side has stopped.' });
+    }
   }
   if (action === 'RELIGHT' && r.outcome === 'A') { if (ignition(s, out)) snapPlayer(s, out); }
   if (action === 'HOLD_SIGNAL') sendMessage(s, out, undefined, undefined, r.outcome === 'A' ? 0.92 : 0.25);
   s.turn++;
   partnerTurn(s, out);
   return afterAction(s, out, true, true);
+}
+
+/** The set that must hear you is the FUTURE one. Sam transmits forward in time, so Jensen's own wheel has to turn. */
+export function receiverPowered(s: Readonly<SimulationState>): boolean {
+  return !s.era || s.era.player === 'FUTURE' || hasFlag(s as SimulationState, 'partner', 'WHEEL_TURNING');
+}
+
+function grantContact(s: SimulationState, out: DomainEvent[]): void {
+  s.v2.contact = true; s.v2.pendingContact = false;
+  recompute(s);
+  out.push({ type: 'WORLD_CHANGED', objectId: 'radio', text: 'A second note answers through the Thread. Under it, a voice that is theirs.' });
+  voice(s, out, 'clear', partnerReport(s), 0);
+  out.push({ type: 'PARTNER_TRACE', objectId: 'radio', text: 'I hear you. ' + partnerReport(s) });
+}
+
+/** A tone you sent earlier is answered as soon as the receiving set has power. */
+function checkContact(s: SimulationState, out: DomainEvent[]): void {
+  if (s.v2.pendingContact && !s.v2.contact && receiverPowered(s)) grantContact(s, out);
 }
 
 function doRest(s: SimulationState, obj: string, out: DomainEvent[]): boolean {
@@ -555,6 +610,7 @@ function retraceTo(s: SimulationState, target: string, out: DomainEvent[], cost:
   addStep(s, { actor: 'player', fromNodeId: s.player.nodeId, toNodeId: target, action: 'RETRACE', cause: 'You walked your own path back.', effect: 'History is kept.' });
   s.player.nodeId = target;
   s.nodes[target].visitState = 'VISITED';
+  if (s.era?.player === 'FUTURE') reapplyLedger(s, out);
   s.retraceCount++;
   s.bondStrain += cost;
   addLog(s, text, 'system');
@@ -577,7 +633,7 @@ function afterAction(s: SimulationState, out: DomainEvent[], effective: boolean,
     if (v.calm && v.tick % TUNING.CALM_DECAY_EVERY === 0) v.calm = Math.max(0, v.calm - 1);
     if (v.tick % TUNING.WOOD_RESTOCK_EVERY === 0) { s.player.taken.wood = Math.max(0, s.player.taken.wood - 1); s.player.taken.plank = Math.max(0, s.player.taken.plank - 1); s.partner.taken.wood = Math.max(0, s.partner.taken.wood - 1); }
     if (v.tick % TUNING.STRAIN_DECAY_EVERY === 0) s.bondStrain = Math.max(0, s.bondStrain - 1);
-    if (v.tick % TUNING.WEATHER_EVERY === 0 && worldTick(s, out)) snapPlayer(s, out);
+    if (v.tick % TUNING.WEATHER_EVERY === 0) { if (worldTick(s, out)) snapPlayer(s, out); if (s.era) worldTick(s, out, 'partner'); }
     if (!effective && v.tick % TUNING.PARTNER_PERIOD === 0 && !s.won) { s.turn++; partnerTurn(s, out); }
   }
   if (!v.examined.includes('seen_inscription') && Math.max(Math.abs(OBJECT_TILES.inscription.tx - v.gridX), Math.abs(OBJECT_TILES.inscription.ty - v.gridY)) <= 4) {

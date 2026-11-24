@@ -1,15 +1,17 @@
 // Ambient causal events (ignition, propagation, rain). State-driven, seeded, recorded as real forks.
-import type { DomainEvent, EventRecord, SimulationState } from './types';
+import type { ActorId, DomainEvent, EventRecord, SimulationState } from './types';
 import { TUNING } from './tuning';
 import { eventId, eventRoll, nodeId } from './rng';
-import { addHistory, addLog, addStep, hasFlag, nodeOf, recompute } from './core';
+import { actorOf, addHistory, addLog, addStep, hasFlag, nodeOf, recompute } from './core';
 
 interface Side { text: string; flags?: string[]; remove?: string[]; instability?: number }
-interface Ambient { template: string; object: string; action: string; pA: number; A: Side; B: Side; reason: (sel: 'A' | 'B') => string; trace?: string }
+interface Ambient { who?: ActorId; template: string; object: string; action: string; pA: number; A: Side; B: Side; reason: (sel: 'A' | 'B') => string; trace?: string }
 
 function ambient(s: SimulationState, out: DomainEvent[], o: Ambient): 'A' | 'B' {
-  const parent = nodeOf(s, 'player');
-  const key = 'world:' + o.template;
+  const who = o.who ?? 'player';
+  const me = actorOf(s, who);
+  const parent = nodeOf(s, who);
+  const key = (who === 'player' ? 'world:' : 'world:partner:') + o.template;
   const occ = s.occurrences[key] ?? 0;
   s.occurrences[key] = occ + 1;
   const roll = eventRoll(s.seed, parent.id, o.template + ':spark', occ);
@@ -24,38 +26,42 @@ function ambient(s: SimulationState, out: DomainEvent[], o: Ambient): 'A' | 'B' 
     s.nodes[ids[i]] = {
       id: ids[i], parentId: parent.id, depth: parent.depth + 1, eventInstanceId: evId, outcomeId: id,
       world: { ...parent.world, instability: parent.world.instability + (sd.instability ?? 0) }, flags,
-      visitState: id === sel ? 'VISITED' : 'POTENTIAL', children: [], owner: 'player',
+      visitState: id === sel ? 'VISITED' : 'POTENTIAL', children: [], owner: who,
     };
     parent.children.push(ids[i]);
   });
   const chosen = sel === 'A' ? o.A : o.B;
-  const from = s.player.nodeId;
-  s.player.nodeId = ids[sel === 'A' ? 0 : 1];
+  const from = me.nodeId;
+  me.nodeId = ids[sel === 'A' ? 0 : 1];
   const rec: EventRecord = {
-    eventInstanceId: evId, templateId: o.template, actorId: 'player', parentNodeId: parent.id, childNodeIds: ids,
-    activeChildNodeId: s.player.nodeId, selectedOutcome: sel, choice: 'LET_GO', effects: chosen.instability ? { instability: chosen.instability } : {},
+    eventInstanceId: evId, templateId: o.template, actorId: who, parentNodeId: parent.id, childNodeIds: ids,
+    activeChildNodeId: me.nodeId, selectedOutcome: sel, choice: 'LET_GO', effects: chosen.instability ? { instability: chosen.instability } : {},
     reason: o.reason(sel), paid: 'No local material was spent.', driftAfter: 0, strainAfter: 0, turnNumber: s.turn,
     sourceObject: o.object, priorState: parent.flags.join(',') || 'no marks', playerAction: o.action, outcomeA: o.A.text, outcomeB: o.B.text,
     seededRoll: Math.round(roll * 1000) / 1000, chosenOutcome: sel, localPhysicalEffect: chosen.text, evidenceShown: chosen.text,
   };
   s.events.push(rec);
-  addStep(s, { actor: 'player', fromNodeId: from, toNodeId: s.player.nodeId, action: 'FORK', eventInstanceId: evId, cause: rec.reason, effect: chosen.text });
-  addHistory(s, 'player', 'CLEARING', o.action, sel, chosen.text);
+  addStep(s, { actor: who, fromNodeId: from, toNodeId: me.nodeId, action: 'FORK', eventInstanceId: evId, cause: rec.reason, effect: chosen.text });
+  addHistory(s, who, 'CLEARING', o.action, sel, chosen.text);
   recompute(s);
   rec.driftAfter = s.realityDrift; rec.strainAfter = s.bondStrain;
-  out.push({ type: 'FORK_RESOLVED', record: rec }); // a genuine branch: same pink bloom as player forks
-  out.push({ type: 'WORLD_CHANGED', objectId: o.object, text: chosen.text });
-  addLog(s, chosen.text, 'event');
+  if (who === 'player') {
+    out.push({ type: 'FORK_RESOLVED', record: rec }); // a genuine branch: same pink bloom as player forks
+    out.push({ type: 'WORLD_CHANGED', objectId: o.object, text: chosen.text });
+  } else out.push({ type: 'PARTNER_TRACE', objectId: o.object, text: o.trace ?? chosen.text });
+  addLog(s, chosen.text, who === 'player' ? 'event' : 'partner');
   return sel;
 }
 
 /** After a successful RELIGHT: a dry undergrowth can carry the flame. Returns true if the map changed. */
-export function ignition(s: SimulationState, out: DomainEvent[]): boolean {
-  const dry = hasFlag(s, 'player', 'DRY');
+export function ignition(s: SimulationState, out: DomainEvent[], who: ActorId = 'player'): boolean {
+  const dry = hasFlag(s, who, 'DRY');
+  const careful = who === 'partner' && (s.partner.knowledge ?? []).includes('caution'); // it clears the brush first when it was warned
   const sel = ambient(s, out, {
-    template: 'ignition', object: 'lantern', action: 'IGNITION', pA: dry ? TUNING.SPREAD_DRY : TUNING.SPREAD_WET,
-    A: { text: 'The brush is catching. Smoke rolls over the garden road, toward the radio.', flags: ['FIRE_SPREAD', 'SMOKE', 'RADIO_SMOKE'], instability: 8 },
-    B: { text: 'The sparks die in the grass.' },
+    who, template: 'ignition', object: 'lantern', action: 'IGNITION', pA: (dry ? TUNING.SPREAD_DRY : TUNING.SPREAD_WET) * (careful ? 0.15 : 1),
+    A: { text: who === 'player' ? 'The brush is catching. Smoke rolls over the garden road, toward the radio.' : 'The brush is catching on their side. Smoke rolls over their road.', flags: ['FIRE_SPREAD', 'SMOKE', 'RADIO_SMOKE'], instability: 8 },
+    B: { text: careful ? 'They clear the dry brush first. The sparks die on bare earth.' : 'The sparks die in the grass.' },
+    trace: undefined,
     reason: r => dry
       ? (r === 'A' ? 'Because the river was diverted, the undergrowth was dry; the signal fire caught.' : 'The undergrowth was dry, but the sparks fell on bare earth.')
       : (r === 'A' ? 'Even damp undergrowth smoulders; the sparks took.' : 'The undergrowth was damp, so the sparks died out.'),
@@ -64,12 +70,12 @@ export function ignition(s: SimulationState, out: DomainEvent[]): boolean {
 }
 
 /** Weather and fire, on subsequent ticks. Returns true if the map changed (smoke / rain). */
-export function worldTick(s: SimulationState, out: DomainEvent[]): boolean {
-  if (!hasFlag(s, 'player', 'FIRE_SPREAD')) return false;
-  const diverted = hasFlag(s, 'player', 'WATER_DIVERTED');
-  const spread = hasFlag(s, 'player', 'PROPAGATED');
+export function worldTick(s: SimulationState, out: DomainEvent[], who: ActorId = 'player'): boolean {
+  if (!hasFlag(s, who, 'FIRE_SPREAD')) return false;
+  const diverted = hasFlag(s, who, 'WATER_DIVERTED');
+  const spread = hasFlag(s, who, 'PROPAGATED');
   const sel = ambient(s, out, {
-    template: spread ? 'rain' : 'propagation', object: 'greenhouse', action: spread ? 'RAIN' : 'PROPAGATION',
+    who, template: spread ? 'rain' : 'propagation', object: 'greenhouse', action: spread ? 'RAIN' : 'PROPAGATION',
     pA: diverted ? TUNING.RAIN_DIVERTED : TUNING.RAIN_FLOWING,
     A: { text: 'Rain sweeps in. The fire hisses out and the smoke thins. The radio can breathe again.', flags: ['RAINED'], remove: ['FIRE_SPREAD', 'SMOKE', 'RADIO_SMOKE', 'PROPAGATED', 'DRY'] },
     B: { text: 'The fire creeps through the dry grass toward the garden. The smoke thickens.', flags: ['PROPAGATED'], instability: 6 },

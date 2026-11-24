@@ -5,6 +5,8 @@ import { TUNING } from './tuning';
 import { hash32, mulberry32 } from './rng';
 import { addHistory, addLog, addStep, anchorOf, coastOpen, hasFlag, nodeOf, recompute, routeOpen, voice } from './core';
 import { runFork } from './forks';
+import { ignition } from './world';
+import { brotherName, closeGate, spawnNode } from './temporal';
 
 const P = (s: SimulationState) => s.partner;
 const LANDMARK: Record<Site, string> = { CLEARING: 'lantern', CROSSING: 'bridge', GARDEN: 'greenhouse', TOWER: 'radio', BEACON: 'anchor_LIGHTHOUSE' };
@@ -66,8 +68,10 @@ function planFor(s: SimulationState, id: AnchorId): Step | { blocked: string } {
     return { action: 'WAIT', why: 'No fuel is left here.' };
   };
   // V5: one shared objective, its own clearing beacon. 1) light it  2) find a way across (needs a crossing)  3) come back to it.
+  const smoky = !!s.era && hasFlag(s, 'partner', 'SMOKE') && hasFlag(s, 'partner', 'FIRE_SPREAD');
+  const SMOKE_WAIT = { blocked: "Smoke hangs over the clearing and I can't tend a flame in it. I'll wait for rain." };
   if (id === 'LANTERN') {
-    if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return fuelStep() ?? go('CLEARING', { action: 'RELIGHT' });
+    if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return smoky ? SMOKE_WAIT : (fuelStep() ?? go('CLEARING', { action: 'RELIGHT' }));
     return { action: 'WAIT', why: '' };
   }
   const crossing = (): Step | { blocked: string } | null => {
@@ -86,7 +90,7 @@ function planFor(s: SimulationState, id: AnchorId): Step | { blocked: string } {
     return { action: 'WAIT', why: '' };
   }
   // LIGHTHOUSE = back home at its clearing beacon
-  if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return fuelStep() ?? go('CLEARING', { action: 'RELIGHT' });
+  if (!hasFlag(s, 'partner', 'LANTERN_LIT')) return smoky ? SMOKE_WAIT : (fuelStep() ?? go('CLEARING', { action: 'RELIGHT' }));
   if (site !== 'CLEARING') { if (!travelOk(s, site, 'CLEARING')) { const c = crossing(); if (c) return c; } return { action: 'TRAVEL', to: 'CLEARING' }; }
   return { action: 'WAIT', why: 'Our beacon is lit. I am back beside it, waiting for yours.' };
 }
@@ -152,7 +156,7 @@ function respond(s: SimulationState, out: DomainEvent[]): boolean {
 
 /** One discrete partner action. Always appends to history. Returns true if something was done. */
 export function partnerTurn(s: SimulationState, out: DomainEvent[], opts: { respondOnly?: boolean } = {}): void {
-  if (s.won || s.phase === 'ENDING' || s.phase === 'FADE') return;
+  if (s.won || s.phase === 'ENDING' || s.phase === 'FADE' || s.partnerFrozen) return;
   const p = P(s);
   p.knowledge ??= [];
   const responded = respond(s, out);
@@ -170,6 +174,25 @@ export function partnerTurn(s: SimulationState, out: DomainEvent[], opts: { resp
     }
     if (travelOk(s, p.site!, 'TOWER') && routeOpen(s, 'partner')) { p.site = 'TOWER'; p.crossed = true; record(s, out, 'SURVIVE', 'TRAVEL', 'Heads for the far bank to rest.'); recompute(s); return; }
     if (hasFlag(s, 'partner', 'GARDEN_GROWN')) { p.site = 'GARDEN'; record(s, out, 'SURVIVE', 'TRAVEL', 'Heads for the garden to rest.'); recompute(s); return; }
+  }
+
+  // The set that has to hear the player is dead because the past opened this brother's gate: push it back (quickly when warned).
+  if (s.era && s.v2.pendingContact && !s.v2.contact && hasFlag(s, 'partner', 'GATE_INHERITED') && !hasFlag(s, 'partner', 'WHEEL_TURNING')) {
+    p.gateWait = (p.gateWait ?? 0) + 1;
+    if (p.crossed && (p.knowledge.includes('caution') || p.gateWait >= 3)) {
+      const nm = brotherName(s, 'partner');
+      if (p.site !== 'CROSSING' && travelOk(s, p.site!, 'CROSSING')) {
+        p.site = 'CROSSING'; record(s, out, 'RESPOND_TO_CALL', 'TRAVEL', 'Heads for the sluice: the set is dead.', { text: `A cyan echo moves toward the sluice. ${nm} has noticed his set is dead.`, objectId: 'tide' });
+        recompute(s); return;
+      }
+      if (p.site === 'CROSSING') {
+        const from = p.nodeId;
+        spawnNode(s, 'partner', closeGate);
+        addStep(s, { actor: 'partner', fromNodeId: from, toNodeId: p.nodeId, action: 'ACT', cause: 'The gate was opened in the past; closing it in his own time.', effect: 'The wheel turns again.' });
+        record(s, out, 'RESPOND_TO_CALL', 'ACT', 'Pushes the gate back so the wheel can turn.', { text: `A cyan echo at the sluice: ${nm} pushes his gate back. His wheel turns again and his set wakes.`, objectId: 'tide' });
+        recompute(s); return;
+      }
+    }
   }
 
   // REACH_NEXT_SITE / PREPARE_BEACON
@@ -225,8 +248,11 @@ function do_(s: SimulationState, out: DomainEvent[], goal: Goal, st: Step): bool
       const first = st.to === 'TOWER' && !p.crossed;
       p.site = st.to;
       if (st.to === 'TOWER') p.crossed = true;
+      const inh = s.temporal?.ledger.find(c => c.to === 'partner' && (c.key === 'bridge' || c.key === 'water'));
+      const nm = brotherName(s, 'partner');
       record(s, out, goal, 'TRAVEL', `Walks to the ${st.to.toLowerCase()}.`,
-        first ? { text: "A cyan echo flickers by the crossing. They've found a way through.", objectId: 'bridge' }
+        first && inh ? { text: `A cyan echo flickers at the crossing: ${nm} ${inh.key === 'bridge' ? 'finds the span already mended and walks across' : 'finds the ford bare and wades across'}.`, objectId: 'bridge' }
+          : first ? { text: "A cyan echo flickers by the crossing. They've found a way through.", objectId: 'bridge' }
           : st.to === 'CLEARING' && p.crossed ? { text: 'A cyan echo moves toward the clearing. They are going back to their beacon.', objectId: 'lantern' } : undefined);
       return true;
     }
@@ -244,12 +270,17 @@ function do_(s: SimulationState, out: DomainEvent[], goal: Goal, st: Step): bool
       return true;
     }
     default: {
+      if (st.action === 'RELIGHT' && s.era && hasFlag(s, 'partner', 'DRY') && !(p.knowledge ?? []).includes('caution') && (p.hesitate ?? 0) < 2) {
+        p.hesitate = (p.hesitate ?? 0) + 1;
+        record(s, out, goal, 'WAIT', 'Eyes the dry brush around the fire pit before lighting it.', { text: `A cyan echo hovers at the fire pit: ${brotherName(s, 'partner')} eyes the dry brush and hesitates.`, objectId: 'lantern' });
+        return true;
+      }
       const r = runFork(s, 'partner', st.action as PhysicalAction, out, true);
       if (!r.ok) return false;
       const o = r.record!;
       p.goal = goal;
       if (st.action === 'OPEN_SLUICE' && r.outcome === 'A') voice(s, out, 'help', 'I opened it. The water is finally falling.', 0);
-      if (st.action === 'RELIGHT' && r.outcome === 'A') voice(s, out, 'clear', 'My beacon is burning again. Can you see it?', Infinity);
+      if (st.action === 'RELIGHT' && r.outcome === 'A') { voice(s, out, 'clear', 'My beacon is burning again. Can you see it?', Infinity); if (s.era) ignition(s, out, 'partner'); }
       out.push({ type: 'PARTNER_ACTED', goal, text: o.localPhysicalEffect });
       addLog(s, o.localPhysicalEffect, 'partner');
       return true; // the beacon is marked on its next turn: it has to stand at the lookout

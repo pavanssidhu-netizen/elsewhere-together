@@ -62,19 +62,29 @@ function puzzleHint(s: S): Hint {
   const diverted = has(s, 'WATER_DIVERTED');
   const n = s.nodes[s.player.nodeId];
   const sibling = alternateOf(s);
+  const stuck = !!s.cfg?.sluiceStuck && !s.v2.examined.includes('wheel');
   if (!knows) {
-    if (!diverted) return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'DIVERT_WATER' : 'OBSERVE', text: 'The wheel turns, and something is carved across the water. Lowering the stream might bare a way.' };
+    if (!diverted) {
+      if (stuck) return { objectId: 'wheel', action: 'OBSERVE', text: 'The gate will not move. Look closely at the wheel beside it.' };
+      return { objectId: 'tide', action: s.v2.examined.includes('tide') ? 'DIVERT_WATER' : 'OBSERVE', text: 'The wheel turns, and something is carved across the water. Lowering the stream might bare a way.' };
+    }
     return { objectId: 'inscription', action: 'READ', text: 'The sand path is bare. The carving waits at its end.' };
   }
   if (!has(s, 'WHEEL_TURNING') || has(s, 'RADIO_SMOKE')) {
-    if (sibling) return { objectId: 'tide', action: 'FOLLOW_ALTERNATE', text: 'The wheel hangs still, so the radio is dead. At the sluice, the other history still has it turning.' };
-    return { objectId: 'tide', action: 'WAIT', text: 'The radio is dead. Wait for the weather to turn.' };
+    if (has(s, 'GATE_INHERITED')) return { objectId: 'tide', action: 'CLOSE_SLUICE', text: 'The gate was opened in the past, and your wheel is dry. Push it back into its slot.' };
+    if (!has(s, 'WHEEL_TURNING') && sibling) return { objectId: 'tide', action: 'FOLLOW_ALTERNATE', text: 'The wheel hangs still, so the radio is dead. At the sluice, the other history still has it turning.' + (s.era?.player === 'PAST' ? " Jensen's wheel dried when you turned the river, too." : '') };
+    return { objectId: 'tide', action: 'WAIT', text: has(s, 'RADIO_SMOKE') ? 'Smoke hangs over the set. Wait for rain.' : 'The radio is dead. Wait for the weather to turn.' };
   }
   const routeOpen = !has(s, 'BRIDGE_CLOSED') || n.world.water <= 1;
   if (!routeOpen) {
     if (s.player.inventory.plank < 2 && s.player.taken.plank < TUNING.PILE) return { objectId: 'planks', action: 'GATHER', text: 'The span is missing boards. Planks lie along the path.' };
     if (s.player.inventory.plank < 1) return { objectId: 'planks', action: 'WAIT', text: 'The planks are gone. The tide leaves more in time.' };
     return { objectId: 'bridge', action: 'BRACE', text: 'The way to the radio is across the bridge.' };
+  }
+  if (s.v2.pendingContact && s.era) {
+    const warned = (s.partner.knowledge ?? []).includes('caution');
+    if (!warned && s.player.inventory.fuel >= 1 && s.link === 'CONNECTED') return { objectId: '', action: 'CALL', call: { kind: 'WARNING' }, text: 'Your tone went out, but Jensen\'s set is dead because you turned the river aside. Warn him through the Thread.' };
+    return { objectId: 'radio', action: 'WAIT', text: 'Jensen has to push his own gate back. Give him a moment.' };
   }
   return { objectId: 'radio', action: s.v2.examined.includes('radio') ? 'TUNE' : 'OBSERVE', text: 'The wheel turns. Try the carved frequency on the radio.' };
 }
@@ -100,6 +110,12 @@ export function objectiveHint(s: S, opts: { skipCalls?: boolean } = {}): Hint {
     if (s.player.taken.wood < TUNING.PILE) return { objectId: 'woodpile', action: 'GATHER', text: 'Dry wood by the trees would feed the beacon.' };
     if (!has(s, 'GARDEN_WITHERED')) return { objectId: 'greenhouse', action: 'HARVEST', text: 'The wood is gone. Dry fibre in the garden would burn, but the beds would go bare.' };
     return { objectId: 'woodpile', action: 'WAIT', text: 'The pile is picked clean. More driftwood washes up in time.' };
+  }
+  // 1b. Jensen sees from the future what Sam is about to do to the dry brush: warn him before he lights it
+  if (s.era?.player === 'FUTURE' && (has(s, 'DRY') || has(s, 'FIRE_SPREAD')) && callOk 
+    && !(s.partner.knowledge ?? []).includes('caution') && !s.nodes[s.partner.nodeId].flags.includes('LANTERN_LIT') && s.link === 'CONNECTED') {
+    if (inv.fuel >= (lit ? 1 : 2)) return { objectId: '', action: 'CALL', call: { kind: 'WARNING' }, text: 'The brush burns here, in your time. Sam is about to light dry brush in his: warn him through the Thread (C).' };
+    if (s.player.taken.wood < TUNING.PILE) return { objectId: 'woodpile', action: 'GATHER', text: 'The brush burns here. Gather one more load of wood so you can warn Sam through the Thread.' };
   }
   // 2. flame
   if (!lit) return { objectId: 'lantern', action: 'RELIGHT', text: 'You have fuel. Relight the beacon in the clearing.' };

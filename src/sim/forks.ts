@@ -42,6 +42,10 @@ const f = (c: Ctx, flag: string) => hasFlag(c.s, c.who, flag);
 const inv = (c: Ctx) => actorOf(c.s, c.who).inventory;
 const you = (c: Ctx) => (c.who === 'player' ? 'your' : 'its');
 
+/** Director's Cut: some gates are pinned until the wheel beside them has been looked at (the player's gate only). */
+const stuckClue = (c: Ctx): string | null =>
+  c.who === 'player' && c.s.cfg?.sluiceStuck && !c.s.v2.examined.includes('wheel') ? 'The gate will not move. Something is holding it from the wheel side.' : null;
+
 const radioBlock = (c: Ctx): string | null => {
   if (c.who !== 'player') return null;
   if (!f(c, 'WHEEL_TURNING')) return 'The radio is dead. The waterwheel that feeds it has stopped.';
@@ -78,7 +82,7 @@ export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
   },
   OPEN_SLUICE: {
     action: 'OPEN_SLUICE', template: 'tide', object: 'tide', site: 'CROSSING',
-    blocked: c => f(c, 'COAST_OPEN') && w(c).water <= 1 ? 'The sluice already runs open.' : null,
+    blocked: c => f(c, 'COAST_OPEN') && w(c).water <= 1 ? 'The sluice already runs open.' : stuckClue(c),
     pA: c => clamp(0.5 + (c.prepared ? 0.15 : 0) + (f(c, 'LANTERN_LIT') ? 0.1 : 0), 0.15, 0.9),
     A: { text: 'The gate grinds open. The water drops; the ford and the sand path surface.' },
     B: { text: 'The gate jams. The stream rises over its banks and the ford vanishes.' },
@@ -118,7 +122,7 @@ export const SPECS: Partial<Record<PhysicalAction, Spec>> = {
 };
 SPECS.DIVERT_WATER = {
   ...SPECS.OPEN_SLUICE!, action: 'DIVERT_WATER',
-  blocked: c => f(c, 'WATER_DIVERTED') && w(c).water <= 1 ? 'The water is already diverted.' : null,
+  blocked: c => f(c, 'WATER_DIVERTED') && w(c).water <= 1 ? 'The water is already diverted.' : stuckClue(c),
   A: { text: 'The gate grinds across. The crossing is exposed and the sand path surfaces. But the waterwheel has stopped: the radio may be without power.' },
   B: { text: 'The gate jams. The stream rises over its banks and the waterwheel keeps turning.' },
 };
