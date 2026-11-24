@@ -45,13 +45,13 @@ export class TitleScene extends DCScene {
     this.tweens.add({ targets: [jen, sam], y: '-=4', yoyo: true, repeat: -1, duration: 1400, ease: 'Sine.easeInOut' });
 
     // buttons
-    const play = makeButton(this, W / 2 - 130, 458, 'PLAY', () => this.play(), { w: 230, size: 24 });
+    const play = makeButton(this, W / 2 - 190, 458, 'PLAY', () => this.play(), { w: 230, size: 24 });
     const relaxedBtn = makeButton(this, W / 2 + 130, 458, this.relaxedLabel(), () => {
       this.dc.settings.relaxed = !this.dc.settings.relaxed;
       try { localStorage.setItem('oos-dc-settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('oos-dc-settings') || '{}'), relaxed: this.dc.settings.relaxed })); } catch { /* ignore */ }
       (relaxedBtn.list[1] as Phaser.GameObjects.BitmapText).setText(this.relaxedLabel());
       const dom = document.getElementById('dc-relaxed'); if (dom) dom.textContent = 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON (takes effect next run)' : 'OFF');
-    }, { w: 230, size: 16 });
+    }, { w: 330, size: 16 });
     this.tweens.add({ targets: play, scale: 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.easeInOut' });
     this.txt(W / 2, 516, 'Art: Kenney, Brackeys, Void Pixel, Nasha. CC0 / free packs.', 16).setOrigin(0.5).setAlpha(0.8);
 
@@ -59,7 +59,7 @@ export class TitleScene extends DCScene {
     this.input.keyboard?.on('keydown-SPACE', () => this.play());
     this.events.once('shutdown', () => { this.input.keyboard?.off('keydown-ENTER'); this.input.keyboard?.off('keydown-SPACE'); });
   }
-  private relaxedLabel(): string { return 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'); }
+  private relaxedLabel(): string { return 'RELAXED: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'); }
   private play(): void { if (this.started) return; this.started = true; this.dc.audio.playSfx('ui_confirm'); this.send({ type: 'START' }); }
   update(_t: number, dt: number): void { for (const l of this.layers) l.t.tilePositionX += (l.vx * dt) / 1000; }
 }

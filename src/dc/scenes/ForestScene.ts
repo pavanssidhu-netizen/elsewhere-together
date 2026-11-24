@@ -1,581 +1,497 @@
 import Phaser from 'phaser';
 import { DCScene } from '../base';
-import { LINE_BY_ID } from '../content/lines';
-import { ForestModel, bondStress } from '../forest/forestModel';
-import { WorldView } from '../forest/worldView';
-import { FEET, OBJECT_NAME, SHORT, USABLE, bfs, captionMs, dirIndex, px, stressTint, verbsFor, type Usable } from '../forest/layout';
-import { OBJECT_TILES, TILE, MAP_H, MAP_W, getNearbyInteractables, getWalkability, tileOf } from '../../world/topology';
-import { alternateOf, availableActions } from '../../sim/engine';
-import { objectiveHint } from '../../sim/planner';
-import { beaconProgress } from '../../sim/core';
-import type { Command, DomainEvent, PhysicalAction, SimulationState } from '../../sim/types';
+import { LINE_BY_ID, type SfxId } from '../content/lines';
+import type { Dir, Input, Layer, Order, Pt, Stage, StageView, SfxHint, ViewEvent } from '../forest2/api';
+import { buildIsoTextures } from '../forest2/view/isoTex';
+import { Iso, TileLayer, ensureViewAnims } from '../forest2/view/tileLayer';
+import { Actor, STEP_MS, SAM_COL, JENSEN_COL } from '../forest2/view/actor';
+import { Hud } from '../forest2/view/hud';
+import { Cards } from '../forest2/view/cards';
+import { Beacon } from '../shared/beacon';
+import type { RunPort } from '../forest2/view/runPort';
+import { createRunPort } from '../forest2/view/runAdapter';
 
-const ZOOM = 2.5;                 // 960 / (32 * 2.5) = 12 tiles across
-const SPEED = 3.5;                // tiles per second
-const INSTRUCTION_S = 4.0;
-const CYAN = 0x7be0df, PINK = 0xe8a0b4, AMBER = 0xffd48a;
-const LANDMARK: Record<string, string> = { CLEARING: 'lantern', CROSSING: 'bridge', GARDEN: 'greenhouse', TOWER: 'radio', BEACON: 'anchor_LIGHTHOUSE' };
-
-type Kind = 'world' | 'partner' | 'echo' | 'tm' | 'fork' | 'warn';
-interface Caption { text: string; kind: Kind; ms: number }
-interface Echo { spr: Phaser.GameObjects.Sprite; ring: Phaser.GameObjects.Image; until: number; x: number; y: number }
-
-const KIND_TINT: Record<Kind, number> = { world: 0xffffff, partner: CYAN, echo: CYAN, tm: AMBER, fork: PINK, warn: 0xffb0b0 };
+const GOLD = 0xffc850, CYAN = 0x7be0df;
+const SFX: Record<SfxHint, SfxId> = {
+  step: 'lane_move', plant: 'ui_confirm', pulse: 'echo_cyan', sap: 'pickup', coat: 'pink_flash', root: 'beacon_light', charge: 'pickup', discharge: 'beacon_light',
+  pin: 'branch', push: 'lane_move', rift: 'branch', sync: 'reunion_chime', strain: 'warning', paradox: 'thread_snap', ignite: 'beacon_light', lock: 'thread_call',
+};
+const KEY_DIR: Record<string, Dir> = { ArrowUp: 'N', KeyW: 'N', ArrowDown: 'S', KeyS: 'S', ArrowLeft: 'W', KeyA: 'W', ArrowRight: 'E', KeyD: 'E' };
+type Mode = 'CARD' | 'PLAY' | 'LOCK' | 'DONE';
+const DISP = (l: Layer): string => (l === 'PAST' ? 'SAM' : 'JENSEN');
+const ROLE = (l: Layer): string => (l === 'PAST' ? 'THE BUILDER' : 'THE SCOUT');
+const TIPS = [
+  'Plant roots, pulse the soil, coat the vine with sap. The past decays into the future.',
+  'Two gaps, two wells, and a time rift. A crate pushed into the rift sends sap backwards.',
+  'Three gaps and a pillar maze. Sap is scarce, so spend every beat.',
+];
 
 export class ForestScene extends DCScene {
-  model!: ForestModel;
-  private view!: WorldView;
-  private worldLayer!: Phaser.GameObjects.Layer;
-  private uiLayer!: Phaser.GameObjects.Layer;
-  private uiCam!: Phaser.Cameras.Scene2D.Camera;
-  private player!: Phaser.GameObjects.Sprite;
-  private shadow!: Phaser.GameObjects.Image;
-  private col: 'red' | 'blue' = 'red';
-  private pl = { tx: 0, ty: 0, x: 0, y: 0, fx: 0, fy: 0, moving: false, t: 0, dir: 0, ax: 0, ay: 0 };
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private stick = { id: -1, dx: 0, dy: 0, cx: 0, cy: 0 };
-  private path: { tx: number; ty: number }[] = [];
-  private phase: 'INTRO' | 'PLAY' | 'END' = 'INTRO';
-  private introLeft = INSTRUCTION_S;
-  private timerText!: Phaser.GameObjects.BitmapText;
-  private tagText!: Phaser.GameObjects.BitmapText;
-  private invText!: Phaser.GameObjects.BitmapText;
-  private capBox!: Phaser.GameObjects.Image;
-  private capText!: Phaser.GameObjects.BitmapText;
-  private captions: Caption[] = [];
-  private capUntil = 0;
-  private lastCap = { text: '', at: 0 };
-  private label!: Phaser.GameObjects.BitmapText;
-  private labelBg!: Phaser.GameObjects.Image;
-  private btnA!: Phaser.GameObjects.Container;
-  private btnB!: Phaser.GameObjects.Container;
-  private btnC!: Phaser.GameObjects.Container;
-  private btnW!: Phaser.GameObjects.Container;
-  private focus: Usable | null = null;
-  private cool!: Phaser.GameObjects.Image;
-  private vig!: Phaser.GameObjects.Image;
-  private bloomImg!: Phaser.GameObjects.Image;
-  private alienTint!: Phaser.GameObjects.Rectangle;
-  private echoes: Echo[] = [];
-  private cm: Phaser.FX.ColorMatrix | null = null;
-  private stress = 0;
-  private musicFinal = false;
-  private lastActAt = -9;
-  private nowMs = 0;
-  private lastProgress = 0;
-  private lastEventCount = 0;
-  private hintAt = -99;
-  private blockedAt = -99;
-  private done = false;
-  private firstEcho = true;
+  run!: RunPort;
+  stage!: Stage;
+  v!: StageView;
+  private mode: Mode = 'CARD';
+  private iso!: Iso;
+  private main?: TileLayer;
+  private peekL?: TileLayer;
+  private beacon?: Beacon;
+  private me?: Actor;
+  private ghost?: Actor;
+  private hud!: Hud;
+  private cards!: Cards;
+  private haze!: Phaser.GameObjects.Image;
+  private backdrop!: Phaser.GameObjects.TileSprite;
+  private veinsMain!: Phaser.GameObjects.Graphics;
+  private veinsPeek!: Phaser.GameObjects.Graphics;
+  private pathG!: Phaser.GameObjects.Graphics;
+  private tetherG!: Phaser.GameObjects.Graphics;
+  private cap!: Phaser.GameObjects.BitmapText;
+  private capBg!: Phaser.GameObjects.Rectangle;
+  private capTimer?: Phaser.Time.TimerEvent;
+  private peeking = false;
+  private dimW = 0; private dimH = 0;
   private touch = false;
-  private offscreen!: Phaser.GameObjects.Image;
-  private idleTimer = 0;
+  private seed = 0;
+  private first = true;
+  private said = new Set<string>();
+  private lowSaid = false;
+  private gone = false;
+  private pickOrder: Order = 'PAST_FIRST';
+  private lastOrder: Order = 'PAST_FIRST';
+  private beaconTile: Pt = { x: 3, y: 3 };
+  private builtFor = '';
+  private t = 0;
+  private timers: Phaser.Time.TimerEvent[] = [];
+  private keyDown = (e: KeyboardEvent): void => this.onKeyDown(e);
+  private keyUp = (e: KeyboardEvent): void => { if (e.code === 'KeyC') this.setPeek(false); };
 
   constructor() { super('ForestScene'); }
 
   create(): void {
+    this.gone = false; this.mode = 'CARD'; this.said = new Set(); this.lowSaid = false; this.peeking = false; this.first = true;
+    this.me = undefined; this.ghost = undefined; this.main = undefined; this.peekL = undefined; this.beacon = undefined; this.builtFor = ''; this.timers = [];
     const snap = this.snap;
-    const character = snap?.character ?? 'JENSEN';
-    const seed = snap?.forestSeed ?? snap?.baseSeed ?? 48219;
-    this.col = character === 'SAM' ? 'blue' : 'red';
-    this.model = new ForestModel(seed, character, this.dc.settings.relaxed);
-    this.phase = 'INTRO'; this.introLeft = INSTRUCTION_S; this.done = false;
-    this.captions = []; this.echoes = []; this.focus = null; this.path = []; this.stress = 0; this.musicFinal = false; this.nowMs = 0; this.firstEcho = true;
-    this.cameras.main.setBackgroundColor(0x0b1a10);
+    const ch = snap?.character ?? 'JENSEN';
+    this.seed = snap?.forestSeed ?? snap?.baseSeed ?? 1;
+    this.pickOrder = ch === 'SAM' ? 'PAST_FIRST' : 'FUTURE_FIRST';
     this.touch = this.sys.game.device.input.touch || new URLSearchParams(location.search).get('touch') === '1';
+    buildIsoTextures(this); ensureViewAnims(this);
+    this.cameras.main.setBackgroundColor(0x0b1a10);
+    this.backdrop = this.add.tileSprite(0, 0, 960, 540, 'tiles/front_lawn').setOrigin(0).setTileScale(2).setTint(0x2c4a2a).setDepth(-5000);
+    this.haze = this.add.image(480, 250, 'vfx/p_light_01').setScale(2.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(-800).setAlpha(0.22);
+    this.veinsMain = this.add.graphics().setDepth(-950);
+    this.veinsPeek = this.add.graphics().setDepth(1950);
+    this.pathG = this.add.graphics().setDepth(3300);
+    this.tetherG = this.add.graphics().setDepth(5000);
+    this.cards = new Cards(this);
+    this.hud = new Hud(this, {
+      move: d => this.act({ t: 'MOVE', dir: d }), a: () => this.act({ t: 'A' }), b: () => this.act({ t: 'B' }),
+      peek: on => this.setPeek(on), endLoop: () => this.act({ t: 'END_LOOP' }), reset: () => this.doReset(),
+    }, this.touch);
+    this.capBg = this.add.rectangle(480, 50, 560, 30, 0x0b0d18, 0.7).setOrigin(0.5, 0).setDepth(20001).setVisible(false);
+    this.cap = this.txt(480, 54, '', 16, 'Aurora16-Smooth', 0xe9e2c8).setOrigin(0.5, 0).setCenterAlign().setDepth(20002).setVisible(false);
+    this.hud.setVisible(false);
 
-    this.worldLayer = this.add.layer();
-    this.uiLayer = this.add.layer().setDepth(100000);
-    const s0 = this.model.state;
-    this.view = new WorldView(this, this.worldLayer, s0, this.dc.settings.reduceMotion);
-
-    this.makePlayer(s0);
-    this.makeCameras();
-    this.makeHud();
-    this.makeInput();
-    this.refreshAll(s0);
-
-    const off = this.model.engine.subscribe((s, evs) => this.onSim(s, evs));
-    this.events.once('shutdown', () => { off(); this.dc.audio.skipVoice(); this.tweens.killAll(); });
-    this.dc.audio.playMusic('forest');
-    this.dc.audio.setBondStress(0);
-    void this.dc.audio.playVoice('tm_start');
-    this.pushCaption(LINE_BY_ID.tm_start.text, 'tm', 3900);
+    this.run = createRunPort(this.seed, ch, this.dc.settings.relaxed);
+    this.input.keyboard!.on('keydown', this.keyDown);
+    this.input.keyboard!.on('keyup', this.keyUp);
+    this.events.once('shutdown', () => this.cleanup());
+    this.events.once('destroy', () => this.cleanup());
+    (window as unknown as Record<string, unknown>).__forest2 = { stage: () => this.stage, run: () => this.run, scene: this, mode: () => this.mode };
+    if (new URLSearchParams(location.search).has('f2debug')) {
+      // test hook only: reference solutions for scripted playthroughs (separate tiny chunk, never loaded in normal play)
+      void import('../forest2/solutions').then(m => { const h = (window as unknown as Record<string, Record<string, unknown>>).__forest2; if (h) h.solve = (room: 1 | 2 | 3, order: Order) => m.referenceSolution(room, order, (this.run.raw as { stageSeed: number }).stageSeed); });
+    }
+    this.dc.audio.playMusic('forest'); this.dc.audio.setBondStress(0.1);
     this.fadeIn(350);
-    (window as unknown as Record<string, unknown>).__forest = this;
+    this.showIntroCard();
   }
 
-  // ---------------------------------------------------------------- construction
-  private makePlayer(s: Readonly<SimulationState>): void {
-    for (const col of ['red', 'blue'] as const) for (let d = 0; d < 8; d++) {
-      const k = `mu-${col}-idle-${d}`;
-      if (!this.anims.exists(k)) {
-        this.anims.create({ key: k, frames: this.anims.generateFrameNumbers('myconid/' + col, { start: d * 40, end: d * 40 + 7 }), frameRate: 5.3, repeat: -1 });
-        this.anims.create({ key: `mu-${col}-walk-${d}`, frames: this.anims.generateFrameNumbers('myconid/' + col, { start: d * 40 + 8, end: d * 40 + 15 }), frameRate: 9.6, repeat: -1 });
+  private cleanup(): void {
+    if (this.gone) return; this.gone = true;
+    this.input.keyboard?.off('keydown', this.keyDown); this.input.keyboard?.off('keyup', this.keyUp);
+    this.timers.forEach(t => t.remove()); this.timers = [];
+    this.capTimer?.remove(); this.cards?.hide(); this.dc.audio.skipVoice(); this.dc.audio.setBondStress(0);
+    this.tweens.killAll();
+    const w = window as unknown as Record<string, unknown>; if (w.__forest2 && (w.__forest2 as { scene: unknown }).scene === this) delete w.__forest2;
+  }
+
+  private later(ms: number, fn: () => void): void { this.timers.push(this.time.delayedCall(ms, () => { if (!this.gone) fn(); })); }
+
+  // ------------------------------------------------------------------ cards / flow
+  private showIntroCard(): void {
+    this.mode = 'CARD'; this.hud.setVisible(false); this.hideRoom();
+    const r = this.run.room;
+    this.cards.card({
+      title: r.name.toUpperCase(), sub: `ROOM ${this.run.roomIndex + 1} / 3`, subTint: GOLD, w: 600, h: 300,
+      body: [TIPS[this.run.roomIndex] ?? '', '', `${r.w}x${r.h} grid. ${r.budget} beats per loop.`],
+      buttons: [{ label: 'CONTINUE', fn: () => this.showChooser(false), primary: true }], autoMs: 3200,
+    });
+  }
+
+  private showChooser(retry: boolean): void {
+    this.mode = 'CARD'; this.hud.setVisible(false);
+    this.cards.chooser(retry ? this.lastOrder : this.pickOrder, retry, o => this.startAttempt(o));
+  }
+
+  private startAttempt(order: Order): void {
+    this.lastOrder = order;
+    this.stage = this.run.begin(order); this.v = this.stage.view();
+    this.said = new Set();
+    this.buildRoom();
+    this.me = this.mkActor(this.v.role, false); this.ghost = undefined;
+    this.me.place(this.v.me.pos.x, this.v.me.pos.y); this.me.face(this.v.me.facing);
+    this.mode = 'PLAY'; this.hud.setVisible(true); this.setPeek(false);
+    this.refresh(this.v, [], true);
+    if (this.first) { this.first = false; this.say('tm_start'); }
+    if (this.run.charges === 1 && !this.lowSaid) { this.lowSaid = true; this.say('tm_charge_low'); }
+  }
+
+  private mkActor(role: Layer, ghost: boolean): Actor { return new Actor(this, this.iso, role === 'PAST' ? 'blue' : 'red', ghost); }
+
+  private hideRoom(): void {
+    this.main?.setVisible(false); this.peekL?.setVisible(false); this.beacon?.setVisible(false);
+    this.me?.setVisible(false); this.ghost?.setVisible(false); this.tetherG.clear(); this.veinsMain.clear(); this.veinsPeek.clear(); this.pathG.clear();
+  }
+
+  private buildRoom(): void {
+    const r = this.v.room, key = `${r.id}|${r.w}x${r.h}`;
+    this.me?.destroy(); this.ghost?.destroy(); this.me = undefined; this.ghost = undefined;
+    if (this.builtFor === key && this.main) { this.main.setVisible(true); this.beacon?.setVisible(true); return; }
+    this.main?.destroy(); this.peekL?.destroy(); this.beacon?.destroy();
+    this.builtFor = key; this.dimW = r.w; this.dimH = r.h;
+    const n = r.w + r.h, S = r.w <= 6 ? 1.75 : r.w === 7 ? 1.6 : 1.45;
+    const midY = 272 + (this.touch ? -6 : 0);
+    this.iso = new Iso(S, 480, midY - ((n - 2) / 2) * 16 * S);
+    const reduce = this.dc.settings.reduceMotion;
+    this.main = new TileLayer(this, this.iso, { reduceMotion: reduce, floorBase: -1000, objBase: 100, alpha: 1 });
+    this.peekL = new TileLayer(this, this.iso, { reduceMotion: reduce, floorBase: 1500, objBase: 2000, alpha: 0.93 });
+    this.peekL.setVisible(false);
+    // beacon at the BEACON tile(s)
+    const pts: Pt[] = [];
+    this.v.map.forEach((row, y) => row.forEach((t, x) => { if (t.kind === 'BEACON') pts.push({ x, y }); }));
+    const bx = pts.reduce((a, p) => a + p.x, 0) / Math.max(1, pts.length), by = pts.reduce((a, p) => a + p.y, 0) / Math.max(1, pts.length);
+    this.beaconTile = { x: bx, y: by };
+    const bp = { x: this.iso.x(bx, by), y: this.iso.y(bx, by) };
+    this.beacon = new Beacon(this, bp.x, bp.y + 16 * S, { scale: S * (pts.length > 1 ? 0.95 : 0.78), dusty: true });
+    this.beacon.setDepth(100 + bp.y + 12);
+  }
+
+  // ------------------------------------------------------------------ input
+  private onKeyDown(e: KeyboardEvent): void {
+    if (this.gone) return;
+    if (e.repeat) { if (e.code in KEY_DIR || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault(); return; }
+    if (this.cards.key(e)) { e.preventDefault(); return; }
+    if (this.mode !== 'PLAY' || !this.live) return;
+    const d = KEY_DIR[e.code];
+    if (d) { e.preventDefault(); this.act({ t: 'MOVE', dir: d }); return; }
+    switch (e.code) {
+      case 'KeyZ': case 'Space': e.preventDefault(); this.act({ t: 'A' }); break;
+      case 'KeyX': this.act({ t: 'B' }); break;
+      case 'KeyC': this.setPeek(true); break;
+      case 'KeyR': this.doReset(); break;
+      case 'Enter': e.preventDefault(); this.act({ t: 'END_LOOP' }); break;
+    }
+  }
+
+  private setPeek(on: boolean): void {
+    if (on && this.mode !== 'PLAY') return;
+    this.peeking = on;
+    this.peekL?.setVisible(on); this.veinsPeek.setVisible(on); this.pathG.setVisible(on);
+    for (const a of [this.me, this.ghost]) if (a) { a.depthAdd = on ? 3000 : 0; a.sync(); }
+    if (on) this.dc.audio.playSfx('echo_cyan');
+    if (this.v) this.drawPeekExtras();
+  }
+
+  private doReset(): void {
+    if (this.mode !== 'PLAY' || !this.live) return;
+    this.v = this.stage.resetPhase();
+    this.me?.place(this.v.me.pos.x, this.v.me.pos.y); this.me?.face(this.v.me.facing);
+    if (this.v.ghost) { this.ghost?.place(this.v.ghost.pos.x, this.v.ghost.pos.y); }
+    this.said.delete('b5' + this.v.phase); this.said.delete('b2' + this.v.phase);
+    this.dc.audio.playSfx('ui_click');
+    this.refresh(this.v, [], true);
+  }
+
+  private act(i: Input): void {
+    if (this.mode !== 'PLAY' || !this.live) return;
+    const prev = this.v;
+    this.v = this.stage.input(i);
+    const bumped = this.v.events.some(e => e.kind === 'BLOCKED');
+    if (i.t === 'MOVE' && bumped) { this.me?.face(i.dir); this.me?.hit(); this.shake(2, 90); }
+    this.refresh(this.v, this.v.events, false, prev);
+  }
+
+  // ------------------------------------------------------------------ render
+  private refresh(v: StageView, evs: ViewEvent[], snap: boolean, prev?: StageView): void {
+    if (!this.main || !this.peekL) return;
+    const role = v.role, other: Layer = role === 'PAST' ? 'FUTURE' : 'PAST';
+    const pins = new Set(v.pins.map(p => p.x + ',' + p.y));
+    this.main.update(v.map, role, pins);
+    this.peekL.update(v.other, other, pins, (x, y) => !!(v.map[y]?.[x]?.weathering || v.other[y]?.[x]?.weathering || (v.map[y]?.[x]?.kind === 'VINE' && v.other[y]?.[x]?.kind === 'DUST')));
+    this.haze.setTint(role === 'PAST' ? 0xffd890 : 0x5fb0d0).setAlpha(role === 'PAST' ? 0.24 : 0.16);
+    this.backdrop.setTint(role === 'PAST' ? 0x2f5a2a : 0x2a3038);
+    this.cameras.main.setBackgroundColor(role === 'PAST' ? 0x0b1a10 : 0x0c1118);
+    // actors
+    const ms = snap || this.dc.settings.reduceMotion ? 0 : STEP_MS;
+    if (this.me) {
+      if (snap) this.me.place(v.me.pos.x, v.me.pos.y); else this.me.moveTo(v.me.pos.x, v.me.pos.y, v.me.facing, ms);
+      this.me.face(v.me.facing);
+    }
+    if (v.ghost) {
+      if (!this.ghost) { this.ghost = this.mkActor(role === 'PAST' ? 'FUTURE' : 'PAST', true); this.ghost.place(v.ghost.pos.x, v.ghost.pos.y); }
+      if (snap) this.ghost.place(v.ghost.pos.x, v.ghost.pos.y); else this.ghost.moveTo(v.ghost.pos.x, v.ghost.pos.y, v.ghost.facing, ms);
+      this.ghost.face(v.ghost.facing);
+    } else if (this.ghost && v.phase === 1) { this.ghost.destroy(); this.ghost = undefined; }
+    for (const a of [this.me, this.ghost]) if (a) { a.depthAdd = this.peeking ? 3000 : 0; a.sync(); }
+    // beacon sockets: amber pips = [root, -, ignition]; cyan pips = [-, charge, ignition]
+    const s = v.sockets;
+    if (this.beacon) {
+      this.beacon.setDusty(!(s.root || s.charge || s.ignition));
+      this.beacon.setProgress([s.root, false, s.ignition], [false, s.charge, s.ignition]);
+      this.beacon.setFlame(s.root || s.ignition, s.charge || s.ignition); this.beacon.setHarmony(s.ignition);
+    }
+    this.drawVeins(v);
+    this.drawPeekExtras();
+    const info = { charges: this.run.charges, maxCharges: this.run.maxCharges, total: this.run.total + (v.status === 'CLEARED' ? 0 : 0), roomLabel: `ROOM ${this.run.roomIndex + 1}/3   ${role} LAYER`, phaseText: `PHASE ${v.phase}: ${DISP(role)}, ${ROLE(role)}`, showTouch: this.touch };
+    this.hud.update(v, info, this.peeking);
+    // audio mood
+    const left = v.budget - v.beat;
+    const final = this.run.charges === 1 || (v.phase === 2 && left <= 5 && v.status === 'PLAYING');
+    this.dc.audio.playMusic(final ? 'final_minute' : 'forest');
+    this.dc.audio.setBondStress(v.doomed ? 0.9 : v.tether?.strained ? 0.6 : 0.1);
+    // events -> fx / sfx / voice
+    for (const e of evs) this.onEvent(e, v);
+    if (v.status === 'PLAYING') {
+      if (left <= 5 && left > 2 && !this.said.has('b5' + v.phase) && v.beat > 0) { this.said.add('b5' + v.phase); this.say('tm_beats_5'); }
+      if (left <= 2 && left > 0 && !this.said.has('b2' + v.phase)) { this.said.add('b2' + v.phase); this.said.add('b5' + v.phase); this.say('tm_beats_2'); }
+    }
+    void prev;
+    if (v.status === 'PHASE1_DONE' && this.mode === 'PLAY') this.timeLock();
+    else if (v.status === 'CLEARED' && this.mode === 'PLAY') this.onCleared();
+    else if (v.status === 'FAILED' && this.mode === 'PLAY') this.onFailed();
+  }
+
+  private veinPath(g: Phaser.GameObjects.Graphics, from: Pt, col: number, lit: boolean, alpha = 1): void {
+    const b = this.beaconTile, I = this.iso;
+    const pts = [new Phaser.Math.Vector2(I.x(from.x, from.y), I.y(from.x, from.y)), new Phaser.Math.Vector2(I.x(b.x, from.y), I.y(b.x, from.y)), new Phaser.Math.Vector2(I.x(b.x, b.y), I.y(b.x, b.y))];
+    g.lineStyle(lit ? 7 : 4, col, (lit ? 0.28 : 0.1) * alpha).strokePoints(pts, false);
+    g.lineStyle(lit ? 2.5 : 1.5, col, (lit ? 1 : 0.4) * alpha).strokePoints(pts, false);
+  }
+
+  private drawVeins(v: StageView): void {
+    this.veinsMain.clear(); this.veinsPeek.clear();
+    const draw = (g: Phaser.GameObjects.Graphics, map: StageView['map'], layer: Layer): void => {
+      const col = layer === 'PAST' ? GOLD : CYAN;
+      let plate: Pt | null = null, ruin: Pt | null = null;
+      map.forEach((row, y) => row.forEach((t, x) => {
+        if (t.kind === 'ROOT_PLATE') this.veinPath(g, { x, y }, GOLD, !!v.sockets.root || !!t.lit);
+        if (t.kind === 'CONDUIT_PLATE') { plate = { x, y }; this.veinPath(g, { x, y }, CYAN, !!v.sockets.charge || !!t.lit); }
+        if (t.kind === 'RUIN') ruin = { x, y };
+        if (t.kind === 'RIFT') this.veinPath(g, { x, y }, 0xb08cff, false);
+      }));
+      const p = plate as Pt | null, r = ruin as Pt | null;
+      if (p && r) {
+        const I = this.iso; g.lineStyle(1.5, CYAN, 0.35).strokePoints([new Phaser.Math.Vector2(I.x(r.x, r.y), I.y(r.x, r.y)), new Phaser.Math.Vector2(I.x(p.x, p.y), I.y(p.x, p.y))], false);
       }
-    }
-    const t = { tx: s.v2.gridX, ty: s.v2.gridY };
-    this.pl.tx = t.tx; this.pl.ty = t.ty; this.pl.x = px(t.tx); this.pl.y = px(t.ty) + FEET; this.pl.dir = 6; // face east, toward the clearing
-    this.shadow = this.add.image(0, 0, 'vfx/p_circle_05').setTint(0x000000).setAlpha(0.28).setScale(0.07, 0.035);
-    this.player = this.add.sprite(0, 0, 'myconid/' + this.col).setScale(0.78).setOrigin(0.5, 42 / 64);
-    this.worldLayer.add([this.shadow, this.player]);
-    this.player.play(`mu-${this.col}-idle-${this.pl.dir}`);
-    this.placePlayer();
-  }
-
-  private placePlayer(): void {
-    this.player.setPosition(this.pl.x, this.pl.y).setDepth(this.pl.y);
-    this.shadow.setPosition(this.pl.x, this.pl.y + 1).setDepth(this.pl.y - 1);
-  }
-
-  private makeCameras(): void {
-    const main = this.cameras.main;
-    main.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE).setZoom(ZOOM).setRoundPixels(true);
-    main.startFollow(this.player, true, 0.14, 0.14).setDeadzone(24, 14);
-    main.centerOn(this.pl.x, this.pl.y);
-    this.uiCam = this.cameras.add(0, 0, this.W, this.H);
-    this.uiCam.setScroll(0, 0);
-    main.ignore(this.uiLayer);
-    // world camera layers get ignored by the HUD camera through the layer filter bit (children added later inherit it)
-    this.worldLayer.cameraFilter |= this.uiCam.id;
-    this.uiLayer.cameraFilter |= main.id;
-    this.shadow.cameraFilter |= this.uiCam.id; this.player.cameraFilter |= this.uiCam.id;
-    if (!this.dc.settings.reduceMotion || true) {
-      try { this.cm = main.postFX ? main.postFX.addColorMatrix() : null; } catch { this.cm = null; }
-    }
-    this.events.once('shutdown', () => { if (this.uiCam) this.cameras.remove(this.uiCam, true); });
-  }
-
-  private ui<T extends Phaser.GameObjects.GameObject>(o: T): T { this.uiLayer.add(o); return o; }
-
-  private canvasTex(key: string, draw: (c: CanvasRenderingContext2D, w: number, h: number) => void): void {
-    if (this.textures.exists(key)) return;
-    const t = this.textures.createCanvas(key, this.W, this.H);
-    if (!t) return;
-    draw(t.getContext(), this.W, this.H); t.refresh();
-  }
-
-  private makeHud(): void {
-    const W = this.W, H = this.H;
-    // overlays: bond-stress cool wash + dark edge, pink fork bloom, alien tint
-    this.canvasTex('dc-vig', (c, w, h) => { const g = c.createRadialGradient(w / 2, h / 2, h * 0.38, w / 2, h / 2, h * 0.95); g.addColorStop(0, 'rgba(10,18,40,0)'); g.addColorStop(1, 'rgba(10,18,40,0.9)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
-    this.canvasTex('dc-bloom', (c, w, h) => { const g = c.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.85); g.addColorStop(0, 'rgba(232,160,180,0)'); g.addColorStop(1, 'rgba(232,160,180,0.95)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
-    this.canvasTex('dc-cool', (c, w, h) => { c.fillStyle = 'rgb(150,180,220)'; c.fillRect(0, 0, w, h); });
-    this.cool = this.ui(this.add.image(W / 2, H / 2, 'dc-cool').setAlpha(0).setBlendMode(Phaser.BlendModes.MULTIPLY));
-    this.vig = this.ui(this.add.image(W / 2, H / 2, 'dc-vig').setAlpha(0));
-    this.bloomImg = this.ui(this.add.image(W / 2, H / 2, 'dc-bloom').setAlpha(0).setBlendMode(Phaser.BlendModes.ADD));
-    this.alienTint = this.ui(this.add.rectangle(W / 2, H / 2, W, H, 0x8a3fb0, 0).setBlendMode(Phaser.BlendModes.MULTIPLY));
-
-    // timer (top centre) and a small tag
-    this.timerText = this.ui(this.add.bitmapText(W / 2, 10, 'fonts/Pepper16-Bold', '3:00', 28).setOrigin(0.5, 0).setTint(0xfff1c9).setDropShadow(1, 2, 0x000000, 0.8));
-    const sam = this.model.character === 'SAM';
-    this.tagText = this.ui(this.add.bitmapText(14, 10, 'fonts/Aurora16-Smooth', sam ? 'SAM  (the past)' : 'JENSEN  (the future)', 16).setTint(sam ? 0x8fb8ff : 0xff9c8f).setDropShadow(1, 1, 0x000000, 0.9));
-    this.invText = this.ui(this.add.bitmapText(14, 32, 'fonts/Aurora16-Smooth', '', 16).setTint(0xfff1c9).setDropShadow(1, 1, 0x000000, 0.9));
-
-    // caption strip
-    this.capBox = this.ui(this.add.image(W / 2, H - 112, 'ui/dialog-box').setDisplaySize(800, 74).setAlpha(0).setTint(0x9aa6c0));
-    this.capText = this.ui(this.add.bitmapText(W / 2, H - 112, 'fonts/Aurora16-Smooth', '', 16).setOrigin(0.5).setMaxWidth(740).setCenterAlign().setAlpha(0));
-
-    // focus label above the player's reach
-    this.labelBg = this.ui(this.add.image(0, 0, 'ui/dialog-box').setDisplaySize(10, 10).setAlpha(0));
-    this.label = this.ui(this.add.bitmapText(0, 0, 'fonts/Aurora16-Smooth', '', 16).setOrigin(0.5).setAlpha(0).setDropShadow(1, 1, 0x000000, 0.9));
-
-    // buttons (bottom-right): primary, secondary, call, warn. Hit areas >= 72 x 56 game px (44 CSS px on a 640 px wide phone)
-    const mk = (x: number, y: number, w: number, label: string, tint: number, fn: () => void) => {
-      const img = this.add.image(0, 0, 'ui/button-normal').setDisplaySize(w, w * 0.34).setTint(tint);
-      const t = this.add.bitmapText(0, -2, 'fonts/Aurora16-Smooth', label, 16).setOrigin(0.5).setTint(0xfff1c9);
-      const c = this.add.container(x, y, [img, t]).setSize(Math.max(w, 96), 58).setInteractive({ useHandCursor: true });
-      c.on('pointerdown', (p: Phaser.Input.Pointer) => { p.event?.stopPropagation?.(); img.setTexture('ui/button-pressed'); fn(); });
-      c.on('pointerup', () => img.setTexture('ui/button-normal'));
-      c.on('pointerout', () => img.setTexture('ui/button-normal'));
-      c.setData('t', t); c.setData('img', img);
-      return this.ui(c);
+      void col;
     };
-    this.btnA = mk(W - 108, H - 40, 190, 'E  Use', 0xffffff, () => this.doVerb(0));
-    this.btnB = mk(W - 108, H - 100, 150, 'Q  Other', 0xcfd8ff, () => this.doVerb(1));
-    this.btnC = mk(W - 276, H - 40, 150, 'C  Call', 0x9ff0ee, () => this.call('CALL'));
-    this.btnW = mk(W - 276, H - 100, 120, 'V  Warn', 0xe8a0b4, () => this.call('WARNING'));
-    [this.btnA, this.btnB, this.btnC, this.btnW].forEach(b => b.setDepth(10));
-    if (this.touch) {
-      const base = this.ui(this.add.image(120, H - 120, 'vfx/p_circle_05').setScale(0.3).setAlpha(0.22));
-      const thumb = this.ui(this.add.image(120, H - 120, 'vfx/p_circle_05').setScale(0.14).setAlpha(0.45));
-      base.setName('stickBase'); thumb.setName('stickThumb');
-    }
-    this.offscreen = this.ui(this.add.image(0, 0, 'vfx/p_star_04').setTint(CYAN).setScale(0.07).setAlpha(0).setBlendMode(Phaser.BlendModes.ADD));
+    draw(this.veinsMain, v.map, v.role);
+    draw(this.veinsPeek, v.other, v.role === 'PAST' ? 'FUTURE' : 'PAST');
+    this.veinsPeek.setVisible(this.peeking);
   }
 
-  private makeInput(): void {
-    const kb = this.input.keyboard!;
-    this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,E,SPACE,Q,F,C,V,ENTER') as Record<string, Phaser.Input.Keyboard.Key>;
-    for (const [k, fn] of [['E', () => this.doVerb(0)], ['SPACE', () => this.doVerb(0)], ['Q', () => this.doVerb(1)], ['F', () => this.doVerb(1)], ['C', () => this.call('CALL')], ['V', () => this.call('WARNING')]] as const) {
-      this.keys[k].on('down', fn);
+  private drawPeekExtras(): void {
+    const g = this.pathG.clear(); const v = this.v;
+    if (!this.peeking || !v?.ghost) return;
+    const col = this.ghost?.ringColor ?? GOLD, I = this.iso, path = v.ghost.path;
+    for (let i = 0; i + 1 < path.length; i++) {
+      const a = path[i], b = path[i + 1];
+      if (a.x === b.x && a.y === b.y) continue;
+      const x1 = I.x(a.x, a.y), y1 = I.y(a.x, a.y), x2 = I.x(b.x, b.y), y2 = I.y(b.x, b.y);
+      g.lineStyle(2.5, col, i < v.ghost.beatIndex ? 0.35 : 0.8).lineBetween(x1, y1, x2, y2);
     }
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.phase !== 'PLAY') return;
-      const over = this.input.hitTestPointer(p).length > 0;
-      if (over) return;
-      if (this.touch && p.x < this.W * 0.38 && p.y > this.H * 0.4) { this.stick = { id: p.id, dx: 0, dy: 0, cx: p.x, cy: p.y }; this.moveStickGfx(p.x, p.y, p.x, p.y); return; }
-      this.walkTo(p);
+    path.forEach((p, i) => { g.fillStyle(col, i === v.ghost!.beatIndex ? 1 : 0.55).fillCircle(I.x(p.x, p.y), I.y(p.x, p.y), i === v.ghost!.beatIndex ? 4 : 2); });
+  }
+
+  private onEvent(e: ViewEvent, v: StageView): void {
+    const isGhost = (e as { ghost?: boolean }).ghost === true;
+    let id: SfxId | undefined = e.sfx ? SFX[e.sfx] : undefined;
+    if (e.kind === 'BLOCKED') id = 'hit';
+    else if (!e.sfx) id = e.kind === 'PARADOX' ? 'thread_snap' : e.kind === 'IGNITION' ? 'beacon_light' : e.kind === 'SYNC_BOOST' ? 'reunion_chime' : undefined;
+    if (isGhost && (e.sfx === 'step' || e.kind === 'BLOCKED')) id = undefined;
+    if (id) this.dc.audio.playSfx(id);
+    const at = e.at ?? v.me.pos;
+    const still = this.dc.settings.reduceMotion;
+    switch (e.kind) {
+      case 'PLANTED': case 'VINE_GREW': case 'COATED': this.burst(at, 0x8cff8c); break;
+      case 'PULSED': this.ring(at, 0xb6ff9a); break;
+      case 'SAP_TAKEN': case 'CHARGE_TAKEN': case 'SAP_ARRIVED': this.burst(at, e.kind === 'CHARGE_TAKEN' ? CYAN : GOLD); break;
+      case 'ROOT_LIT': this.burst(at, GOLD); break;
+      case 'CHARGE_LIT': this.burst(at, CYAN); break;
+      case 'PIN_DROPPED': case 'RIFT_SENT': this.ring(at, 0xffffff); break;
+      case 'SYNC_BOOST': this.ring(v.me.pos, 0xfff2a0); this.toast('SYNC BOOST +1 beat, multiplier up'); break;
+      case 'STRAINED': this.toast('TETHER STRAINED: moves cost 2 beats'); break;
+      case 'IGNITION': if (!still) this.cameras.main.flash(300, 255, 240, 200); this.beacon?.pulse(0xfff2c4); break;
+      case 'PARADOX': this.say('tm_paradox'); if (!still) { this.cameras.main.flash(260, 255, 60, 60); } this.shake(5, 300); break;
+      default: break;
+    }
+    if (e.text && e.kind !== 'MOVED' && e.kind !== 'NOTHING') this.toast(e.text);
+    if (e.kind === 'NOTHING' && e.text) this.toast(e.text);
+  }
+
+  private burst(at: Pt, tint: number): void {
+    const x = this.iso.x(at.x, at.y), y = this.iso.y(at.x, at.y) - 10;
+    this.ring(at, tint);
+    if (this.dc.settings.reduceMotion) return;
+    for (let i = 0; i < 6; i++) {
+      const s = this.add.image(x, y, 'vfx/p_star_01').setTint(tint).setScale(0.04 * this.iso.S).setBlendMode(Phaser.BlendModes.ADD).setDepth(6000);
+      this.tweens.add({ targets: s, x: x + Math.cos(i * 1.05) * 26, y: y - 8 + Math.sin(i * 1.05) * 18 - 14, alpha: 0, duration: 520, onComplete: () => s.destroy() });
+    }
+  }
+  private ring(at: Pt, tint: number): void {
+    const x = this.iso.x(at.x, at.y), y = this.iso.y(at.x, at.y);
+    const r = this.add.image(x, y, 'vfx/p_circle_05').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(0.05 * this.iso.S, 0.025 * this.iso.S).setAlpha(0.95).setDepth(6000);
+    this.tweens.add({ targets: r, scaleX: 0.3 * this.iso.S, scaleY: 0.15 * this.iso.S, alpha: 0, duration: this.dc.settings.reduceMotion ? 200 : 520, onComplete: () => r.destroy() });
+  }
+  private shake(px: number, ms: number): void { if (!this.dc.settings.reduceMotion) this.cameras.main.shake(ms, px / 1000); }
+  private toast(s: string): void { this.caption(s, 'sys'); }
+
+  private say(id: string): void {
+    const l = LINE_BY_ID[id]; if (!l) return;
+    void this.dc.audio.playVoice(id);
+    this.caption(l.text, 'tm');
+  }
+  private caption(text: string, kind: 'tm' | 'sys'): void {
+    this.cap.setText(text).setTint(kind === 'tm' ? 0xffe2a0 : 0xd7f6f5).setVisible(true).setMaxWidth(520);
+    this.capBg.setVisible(true).setSize(this.cap.width + 24, this.cap.height + 8);
+    this.capTimer?.remove();
+    this.capTimer = this.time.delayedCall(kind === 'tm' ? 3800 : 2200, () => { this.cap.setVisible(false); this.capBg.setVisible(false); });
+  }
+
+  // ------------------------------------------------------------------ Time-Lock
+  private timeLock(): void {
+    this.mode = 'LOCK'; this.setPeek(false);
+    const me = this.me!, still = this.dc.settings.reduceMotion;
+    this.dc.audio.playSfx('thread_call'); this.say('tm_loop_lock');
+    const p = { x: me.px, y: me.py - 24 * this.iso.S };
+    if (!still) {
+      const f = this.add.sprite(p.x, p.y, 'vfx/charge').setScale(1.3).setBlendMode(Phaser.BlendModes.ADD).setDepth(6000).play('f2-charge');
+      f.once('animationcomplete', () => f.destroy());
+    }
+    // padlock icon (UI overlay shape)
+    const lk = this.add.graphics().setDepth(6001).setPosition(p.x, p.y - 8);
+    lk.lineStyle(4, 0xffe9a0, 1).beginPath().arc(0, -6, 8, Math.PI, 0, false).strokePath();
+    lk.fillStyle(0xffc850, 1).fillRoundedRect(-12, -6, 24, 18, 3); lk.fillStyle(0x3a2a10, 1).fillCircle(0, 3, 3);
+    this.tweens.add({ targets: lk, y: lk.y - 26, alpha: 0, duration: 1300, delay: 300, onComplete: () => lk.destroy() });
+    me.toGhost();
+    this.tweens.add({ targets: me.spr, alpha: 0.45, duration: still ? 50 : 500 });
+    this.later(still ? 200 : 1000, () => {
+      this.v = this.stage.beginPhase2();
+      const old = me; this.me = undefined;
+      this.ghost?.destroy();
+      this.ghost = old;
+      this.me = this.mkActor(this.v.role, false);
+      this.me.place(this.v.me.pos.x, this.v.me.pos.y); this.me.face(this.v.me.facing);
+      this.me.spr.setAlpha(0); this.tweens.add({ targets: this.me.spr, alpha: 1, duration: still ? 50 : 400 });
+      const g = this.v.ghost; if (g) old.moveTo(g.pos.x, g.pos.y, g.facing, still ? 0 : 500);
+      if (!still) this.cameras.main.flash(260, 200, 240, 255);
+      this.mode = 'PLAY';
+      this.said.delete('b52'); this.said.delete('b22');
+      this.refresh(this.v, [], false);
     });
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.stick.id !== p.id) return;
-      const dx = p.x - this.stick.cx, dy = p.y - this.stick.cy, d = Math.hypot(dx, dy);
-      const k = Math.min(1, d / 50);
-      this.stick.dx = d > 14 ? dx / d * k : 0; this.stick.dy = d > 14 ? dy / d * k : 0;
-      this.moveStickGfx(this.stick.cx, this.stick.cy, this.stick.cx + dx / Math.max(1, d) * Math.min(d, 50), this.stick.cy + dy / Math.max(1, d) * Math.min(d, 50));
+  }
+
+  // ------------------------------------------------------------------ results
+  private onCleared(): void {
+    this.mode = 'DONE'; this.setPeek(false);
+    const v = this.v, st = this.stage;
+    const info = this.run.cleared(st);
+    this.say('tm_stage_clear');
+    this.later(1800, () => { void this.dc.audio.playVoice(this.snap?.character === 'SAM' ? 'sam_cheer' : 'jensen_cheer'); });
+    const sc = v.score;
+    const rows: [string, string, number?][] = [
+      ['Base clear' + (v.order === 'PAST_FIRST' ? ' (x1.25 foresight)' : ''), String(sc.base)],
+      ['Efficiency (spare beats)', String(sc.efficiency)],
+      ['Symbiosis', String(sc.symbiosis)],
+      ['Multiplier reached', 'x' + sc.multiplier, 0xfff2a0],
+      ['STAGE SCORE', String(sc.total), 0xffd060],
+      ['RUN TOTAL', String(this.run.total), 0xffffff],
+    ];
+    const star = info.hasStar ? 'CHRONO-MASTERY STAR EARNED' + (info.starEarned ? ' (new!)' : '') : info.needOther ? `Star: also clear this room as ${info.needOther === 'PAST_FIRST' ? 'SAM first' : 'JENSEN first'}` : '';
+    this.later(this.dc.settings.reduceMotion ? 300 : 1100, () => {
+      this.mode = 'CARD'; this.hud.setVisible(false);
+      this.cards.card({
+        title: 'ROOM CLEARED', titleTint: 0xffe08a, sub: v.room.name + '   ' + (v.order === 'PAST_FIRST' ? 'SAM FIRST' : 'JENSEN FIRST'), rows, body: star ? [star] : [], bodyTint: info.hasStar ? 0xffe08a : 0xbcd8d8, w: 620, h: 420,
+        buttons: [{ label: info.lastRoom ? 'FINISH THE RUN' : 'NEXT ROOM', primary: true, fn: () => this.afterClear(info.lastRoom) }],
+      });
     });
-    const release = (p: Phaser.Input.Pointer) => { if (this.stick.id === p.id) { this.stick.id = -1; this.stick.dx = this.stick.dy = 0; this.moveStickGfx(120, this.H - 120, 120, this.H - 120); } };
-    this.input.on('pointerup', release); this.input.on('pointerupoutside', release);
   }
 
-  private moveStickGfx(bx: number, by: number, tx: number, ty: number): void {
-    const b = this.uiLayer.getByName('stickBase') as Phaser.GameObjects.Image | null, t = this.uiLayer.getByName('stickThumb') as Phaser.GameObjects.Image | null;
-    b?.setPosition(bx, by); t?.setPosition(tx, ty);
+  private afterClear(last: boolean): void {
+    this.run.advance();
+    if (!last) { this.showIntroCard(); return; }
+    this.finalCard(true);
   }
 
-  private walkTo(p: Phaser.Input.Pointer): void {
-    const w = this.cameras.main.getWorldPoint(p.x, p.y);
-    const tx = Math.floor(w.x / TILE), ty = Math.floor(w.y / TILE);
-    const s = this.model.state, n = s.nodes[s.player.nodeId];
-    const grid = getWalkability(n.world, n.flags, s.v2.realm);
-    let tgt = { tx, ty };
-    if (!grid[ty]?.[tx]) { // tapped something solid (an object, a tree): walk to the nearest walkable neighbour
-      const cand = [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]].map(([dx, dy]) => ({ tx: tx + dx, ty: ty + dy })).filter(c => grid[c.ty]?.[c.tx]);
-      if (!cand.length) return;
-      cand.sort((a, b) => Math.hypot(a.tx - this.pl.tx, a.ty - this.pl.ty) - Math.hypot(b.tx - this.pl.tx, b.ty - this.pl.ty));
-      tgt = cand[0];
-    }
-    const path = bfs(grid, { tx: this.pl.moving ? this.pl.ax : this.pl.tx, ty: this.pl.moving ? this.pl.ay : this.pl.ty }, tgt);
-    this.path = path ?? [];
-    if (!path) this.pushCaption('No way through from here. Look for a bridge, a ford or a drier path.', 'world');
+  private onFailed(): void {
+    this.mode = 'DONE'; this.setPeek(false);
+    const v = this.v;
+    this.run.failed(this.stage);
+    const left = this.run.charges;
+    if (left === 1 && !this.lowSaid) { this.lowSaid = true; this.later(2600, () => this.say('tm_charge_low')); }
+    const hint = v.failReason === 'PARADOX'
+      ? 'A Blueprint Pin is only a promise. Sam has to really build what Jensen assumed (coat the vine, make the bark) before Jensen walks it. Hold C to Peek at the ghost route.'
+      : v.failReason === 'BUDGET' ? 'Out of beats. Hold C to Peek for a shorter route, and press END LOOP early when your job is done.'
+      : 'Both shrooms must stand on their conduits on the same beat, with the root and charge sockets already lit. Peek at the ghost to time it.';
+    this.later(this.dc.settings.reduceMotion ? 200 : 1000, () => {
+      this.mode = 'CARD'; this.hud.setVisible(false);
+      if (this.run.result === 'LOST') { this.finalCard(false); return; }
+      this.cards.card({
+        title: v.failReason === 'PARADOX' ? 'PARADOX!' : 'LOOP FAILED', titleTint: 0xff8a7a, sub: v.failText ?? 'The loop did not close.', subTint: 0xffd8c8, w: 640, h: 380,
+        rows: [['Thread charges left', `${left} / ${this.run.maxCharges}`, left <= 1 ? 0xff8a7a : 0xfff1c9]], body: ['Why: ' + hint],
+        buttons: [{ label: 'RETRY ROOM', primary: true, fn: () => this.showChooser(true) }],
+      });
+    });
   }
 
-  // ---------------------------------------------------------------- captions
-  private pushCaption(text: string, kind: Kind, ms?: number): void {
-    if (!text) return;
-    if (text === this.lastCap.text && this.nowMs - this.lastCap.at < 6000) return;
-    this.lastCap = { text, at: this.nowMs };
-    if (this.captions.some(c => c.text === text)) return;
-    this.captions.push({ text, kind, ms: ms ?? captionMs(text) });
-    if (this.captions.length > 3) this.captions.splice(0, this.captions.length - 3);
-  }
-
-  private tickCaptions(): void {
-    if (this.nowMs < this.capUntil) return;
-    const c = this.captions.shift();
-    if (!c) { this.tweens.add({ targets: [this.capBox, this.capText], alpha: 0, duration: 180, overwrite: true }); this.capUntil = this.nowMs + 120; return; }
-    this.capText.setText(c.text).setTint(KIND_TINT[c.kind]);
-    const lines = Math.ceil(c.text.length / 62);
-    this.capBox.setDisplaySize(800, 40 + 22 * Math.min(lines, 3)).setTint(c.kind === 'echo' || c.kind === 'partner' ? 0x7fb9c0 : c.kind === 'fork' ? 0xd7a5b5 : 0x9aa6c0);
-    this.tweens.add({ targets: this.capBox, alpha: 0.88, duration: 160, overwrite: true });
-    this.tweens.add({ targets: this.capText, alpha: 1, duration: 160, overwrite: true });
-    this.capUntil = this.nowMs + c.ms;
-  }
-
-  // ---------------------------------------------------------------- sim -> presentation
-  private onSim(s: Readonly<SimulationState>, evs: DomainEvent[]): void {
-    const texts = new Set<string>();
-    for (const e of evs) {
-      switch (e.type) {
-        case 'FORK_RESOLVED': this.bloom(); this.dc.audio.playSfx('branch'); break;
-        case 'WORLD_CHANGED':
-          if (e.text) { texts.add(e.text); this.pushCaption(e.text, 'world'); }
-          if (e.objectId && (USABLE as readonly string[]).includes(e.objectId)) this.ringAt(e.objectId, 0xfff1c9);
-          break;
-        case 'PARTNER_TRACE': this.echoAt(e.objectId, e.text); break;
-        case 'TEMPORAL':
-          this.dc.audio.playSfx('echo_cyan');
-          if (e.toActor === 'player') this.echoAt(e.objectId, e.text, true);
-          else this.pushCaption(`Your work travels forward along the Thread: ${e.change.text}`, 'echo');
-          break;
-        case 'VOICE': if (!texts.has(e.text)) this.pushCaption(e.text, 'partner'); break;
-        case 'WARNING': this.pushCaption(e.text, 'warn'); this.dc.audio.playSfx('warning'); break;
-        case 'REALM': this.alienTint.setFillStyle(0x8a3fb0, e.realm === 'ALIEN' ? 0.45 : 0); this.dc.audio.playSfx('echo_cyan'); break;
-        case 'RETRACED': this.ringAt('tide', PINK); this.bloom(0.55); break;
-        case 'ANCHOR_ALIGNED': this.dc.audio.playSfx('beacon_light'); this.view.beacon.pulse(e.anchorId === 'LIGHTHOUSE' ? 0xfff2c4 : e.anchorId === 'LANTERN' ? AMBER : CYAN); break;
-        case 'STRAIN_RECOVERED': this.dc.audio.playSfx('reunion_chime'); break;
-        case 'REJECTED': if (!texts.has(e.reason)) this.pushCaption(e.reason, 'world'); break;
-        case 'WIN': this.onWin(); break;
-        case 'FADE': this.onLost('The Thread frays past mending.'); break;
-        default: break;
-      }
-    }
-    this.refreshAll(s);
-  }
-
-  private refreshAll(s: Readonly<SimulationState>): void {
-    this.view.refresh(s);
-    const b = beaconProgress(s);
-    this.view.beacon.setProgress(b.player, b.partner).setHarmony(b.player.every(Boolean) && b.partner.every(Boolean));
-    const inv = s.player.inventory;
-    this.invText.setText(`Wood x${inv.fuel}    Planks x${inv.plank}`);
-    // bond stress: audio, desaturation, cool wash
-    const st = bondStress(s);
-    if (Math.abs(st - this.stress) > 0.004) { this.stress = st; this.dc.audio.setBondStress(st); this.applyStress(); }
-    this.applyMusic();
-    // the sim may have moved the player (the Thread tugs you back to the clearing)
-    if (s.v2.gridX !== this.pl.tx || s.v2.gridY !== this.pl.ty) {
-      if (!this.pl.moving || (s.v2.gridX !== this.pl.ax || s.v2.gridY !== this.pl.ay)) {
-        this.pl.moving = false; this.pl.tx = s.v2.gridX; this.pl.ty = s.v2.gridY; this.pl.x = px(this.pl.tx); this.pl.y = px(this.pl.ty) + FEET; this.path = [];
-        this.placePlayer(); this.cameras.main.centerOn(this.pl.x, this.pl.y);
-      }
-    }
-    if (s.events.length !== this.lastEventCount) { this.lastEventCount = s.events.length; this.lastProgress = this.nowMs; }
-  }
-
-  private applyStress(): void {
-    const t = stressTint(this.stress);
-    this.cool.setAlpha(Math.min(0.28, t.coolAlpha * 1.4));
-    this.vig.setAlpha(t.dark);
-    if (this.cm) { this.cm.reset(); this.cm.saturate(-t.desat); }
-  }
-
-  private applyMusic(): void {
-    const s = this.model.state;
-    const final = this.model.timeLeft <= 60 || s.link === 'FRAYING' || s.link === 'LAST_SIGNAL' || s.realityDrift >= 55;
-    if (final !== this.musicFinal) { this.musicFinal = final; this.dc.audio.playMusic(final ? 'final_minute' : 'forest'); }
-  }
-
-  private bloom(strength = 0.9): void {
-    const img = this.bloomImg;
-    this.tweens.killTweensOf(img);
-    if (this.dc.settings.reduceMotion) { img.setAlpha(0.3 * strength); this.time.delayedCall(700, () => img.setAlpha(0)); return; }
-    img.setAlpha(0);
-    this.tweens.add({ targets: img, alpha: strength, duration: 180, ease: 'Sine.easeOut', yoyo: true, hold: 120, completeDelay: 0, onComplete: () => img.setAlpha(0) });
-    this.tweens.add({ targets: img, alpha: 0, delay: 560, duration: 120 });
-  }
-
-  private ringAt(id: string, color: number): void {
-    const p = this.view.posOf(id, this.model.state);
-    const r = this.add.image(p.x, p.y + 6, 'vfx/p_circle_05').setBlendMode(Phaser.BlendModes.ADD).setTint(color).setScale(0.04).setAlpha(0.9).setDepth(9000);
-    this.worldLayer.add(r);
-    this.tweens.add({ targets: r, scale: 0.28, alpha: 0, duration: 650, onComplete: () => r.destroy() });
-  }
-
-  /** The brother is never drawn physically: only a cyan echo at the landmark where he just acted. */
-  private echoAt(objectId: string | undefined, text: string, fromPast = false): void {
-    const s = this.model.state;
-    const id = objectId && OBJECT_TILES[objectId] ? objectId : LANDMARK[s.partner.site ?? 'CLEARING'];
-    const p = this.view.posOf(id, s);
-    const x = p.x - 16, y = p.y + 10 + FEET - 10;
-    const other = this.col === 'red' ? 'blue' : 'red';
-    while (this.echoes.length >= 2) { const o = this.echoes.shift()!; o.spr.destroy(); o.ring.destroy(); }
-    const spr = this.add.sprite(x, y, 'myconid/' + other).setScale(0.78).setOrigin(0.5, 42 / 64).setTint(CYAN).setAlpha(0).setDepth(y).setBlendMode(Phaser.BlendModes.ADD);
-    spr.play(`mu-${other}-idle-${p.x > this.pl.x ? 2 : 6}`);
-    const ring = this.add.image(x, y - 6, 'vfx/p_circle_05').setBlendMode(Phaser.BlendModes.ADD).setTint(CYAN).setScale(0.05).setAlpha(0.9).setDepth(9000);
-    this.worldLayer.add([spr, ring]);
-    const born = this.nowMs;
-    this.echoes.push({ spr, ring, until: born + 3600, x, y });
-    this.tweens.add({ targets: spr, alpha: 0.62, duration: 280 });
-    this.tweens.add({ targets: ring, scale: 0.3, alpha: 0, duration: 800 });
-    this.dc.audio.playSfx('echo_cyan');
-    const kind: Kind = fromPast ? 'echo' : 'partner';
-    this.pushCaption(text, kind, captionMs(text) + 400);
-    if (this.firstEcho) { this.firstEcho = false; void this.dc.audio.playVoice('tm_partner_hint'); }
-  }
-
-  // ---------------------------------------------------------------- actions
-  private nearby(): Usable[] {
-    const s = this.model.state, n = s.nodes[s.player.nodeId];
-    return getNearbyInteractables(n.world, n.flags, { tx: this.pl.tx, ty: this.pl.ty }, s.v2.realm).filter((o): o is Usable => (USABLE as readonly string[]).includes(o));
-  }
-
-  private verbsOf(obj: Usable): PhysicalAction[] {
-    const s = this.model.state, f = s.nodes[s.player.nodeId].flags;
-    const list = verbsFor(obj, { lit: f.includes('LANTERN_LIT'), inherited: f.includes('GATE_INHERITED'), hasAlt: !!alternateOf(s), gridWheelLooked: s.v2.examined.includes('wheel') });
-    const ok = new Set(availableActions(s, obj).map(a => a.action));
-    return list.filter(a => a === 'OBSERVE' || ok.has(a));
-  }
-
-  private doVerb(i: number): void {
-    if (this.phase !== 'PLAY' || !this.live || this.nowMs - this.lastActAt < 220) return;
-    const obj = this.focus;
-    if (!obj) { if (i === 0) this.pushCaption('Nothing within reach. Walk up to the beacon, the wood, the water or the mast.', 'world'); return; }
-    const verbs = this.verbsOf(obj);
-    const a = verbs[Math.min(i, verbs.length - 1)];
-    if (i > 0 && verbs.length < 2) return;
-    this.lastActAt = this.nowMs;
-    this.dc.audio.playSfx(a === 'GATHER' ? 'pickup' : a === 'RELIGHT' ? 'fuel_burn' : a === 'BRACE' ? 'anchor_pickup' : a === 'TUNE' || a === 'HOLD_SIGNAL' ? 'beep' : a === 'REST' ? 'ui_confirm' : 'ui_click');
-    this.model.dispatch({ type: 'INTERACT', objectId: obj, action: a });
-    if (a === 'RELIGHT' && this.model.state.nodes[this.model.state.player.nodeId].flags.includes('LANTERN_LIT')) this.view.beacon.pulse(AMBER);
-    this.afterAction();
-  }
-
-  private call(kind: 'CALL' | 'WARNING'): void {
-    if (this.phase !== 'PLAY' || !this.live || this.nowMs - this.lastActAt < 220) return;
-    this.lastActAt = this.nowMs;
-    this.dc.audio.playSfx('thread_call');
-    const cmd: Command = kind === 'WARNING' ? { type: 'CALL', kind: 'WARNING' } : { type: 'CALL' };
-    this.model.dispatch(cmd);
-    this.view.beacon.pulse(CYAN);
-    this.afterAction();
-  }
-
-  private afterAction(): void { this.lastProgress = this.nowMs; this.idleTimer = 0; }
-
-  private focusTarget(): Usable | null {
-    const list = this.nearby();
-    if (!list.length) return null;
-    const s = this.model.state, f = s.nodes[s.player.nodeId].flags;
-    const d = (o: Usable) => { const t = tileOf(o, f); return Math.hypot(t.tx - this.pl.tx, t.ty - this.pl.ty); };
-    return [...list].sort((a, b) => d(a) - d(b))[0];
-  }
-
-  private updateLabel(): void {
-    const obj = this.focus;
-    const s = this.model.state;
-    const verbs = obj ? this.verbsOf(obj) : [];
-    const a = verbs[0], b = verbs[1];
-    const tA = this.btnA.getData('t') as Phaser.GameObjects.BitmapText, tB = this.btnB.getData('t') as Phaser.GameObjects.BitmapText;
-    tA.setText(a ? `E  ${SHORT[a] ?? 'Use'}` : 'E  Use'); tB.setText(b ? `Q  ${SHORT[b] ?? 'Other'}` : 'Q  --');
-    this.btnA.setAlpha(a ? 1 : 0.55); this.btnB.setAlpha(b ? 1 : 0.4);
-    const fuel = s.player.inventory.fuel;
-    (this.btnC.getData('t') as Phaser.GameObjects.BitmapText).setText(fuel > 0 ? 'C  Call  -1 wood' : 'C  Call (no wood)');
-    (this.btnW.getData('t') as Phaser.GameObjects.BitmapText).setText(fuel > 0 ? 'V  Warn  -1 wood' : 'V  Warn (no wood)');
-    this.btnC.setAlpha(fuel > 0 ? 1 : 0.55); this.btnW.setAlpha(fuel > 0 ? 1 : 0.55);
-    const p = this.view.setFocus(obj, s, this.nowMs);
-    if (obj && p) {
-      const cam = this.cameras.main;
-      const sx = (p.x - cam.worldView.x) * ZOOM, sy = (p.y - 34 - cam.worldView.y) * ZOOM;
-      const txt = `${OBJECT_NAME[obj]}${a ? ': ' + (SHORT[a] ?? '') : ''}`;
-      this.label.setText(txt).setPosition(Math.round(sx), Math.round(sy)).setAlpha(1).setTint(0xfff1c9);
-      this.labelBg.setDisplaySize(this.label.width + 26, 30).setPosition(Math.round(sx), Math.round(sy)).setAlpha(0.8).setTint(0x2a2f44);
-    } else { this.label.setAlpha(0); this.labelBg.setAlpha(0); }
-  }
-
-  // ---------------------------------------------------------------- end states
-  private onWin(): void {
-    if (this.phase === 'END') return;
-    this.phase = 'END';
-    this.pushCaption('There you are.', 'partner', 2200);
-    this.dc.audio.playSfx('reunion_chime');
-    this.view.beacon.setHarmony(true); this.view.beacon.pulse(0xfff2c4);
-    this.time.delayedCall(1900, () => this.finish(true));
-  }
-
-  private onLost(why: string): void {
-    if (this.phase === 'END') return;
-    this.phase = 'END';
-    this.pushCaption(why, 'warn', 2600);
-    this.dc.audio.playSfx('collapse');
-    if (!this.dc.settings.reduceMotion) this.cameras.main.fadeOut(1300, 10, 12, 30);
-    this.time.delayedCall(1500, () => this.finish(false));
+  private finalCard(won: boolean): void {
+    this.mode = 'CARD'; this.hud.setVisible(false); this.hideRoom();
+    const medal = this.run.medal();
+    const tint = { GOLD: 0xffd24a, SILVER: 0xd8e0e8, BRONZE: 0xd8883a, NONE: 0x8a8a8a }[medal];
+    if (!won) this.say('tm_forest_fail');
+    this.cards.card({
+      title: won ? 'THE THREAD HOLDS' : 'THE THREAD SNAPS', titleTint: won ? 0xffe08a : 0xff8a7a, w: 560, h: 380,
+      sub: won ? 'All three rooms cleared.' : 'No Thread charges left.',
+      icon: won && medal !== 'NONE' ? { key: 'runner/Diamond', tint, scale: 2.6 } : undefined,
+      rows: [['Run score', String(this.run.total), 0xffffff], ['Medal', medal === 'NONE' ? 'none' : medal, tint]],
+      buttons: [{ label: 'CONTINUE', primary: true, fn: () => this.finish(won) }],
+    });
   }
 
   private finish(won: boolean): void {
-    if (this.done) return;
-    this.done = true;
-    this.dc.session.forestSummary = this.model.summary(won);
-    this.dc.session.forestState = this.model.engine.getState();
+    if (this.gone) return;
+    const sum = this.run.summary(); sum.won = won;
+    this.dc.session.forestSummary = sum; this.dc.session.forestState = null;
     this.send({ type: won ? 'FOREST_WON' : 'FOREST_LOST' });
   }
 
-  // ---------------------------------------------------------------- frame loop
-  update(_t: number, delta: number): void {
-    const dt = Math.min(0.1, delta / 1000);
-    this.view.update(dt);
-    if (!this.live) { this.animatePlayer(); return; }
-    this.nowMs += delta;
-    this.tickCaptions();
-    this.updateEchoes();
-    if (this.phase === 'INTRO') {
-      this.introLeft -= dt;
-      this.animatePlayer();
-      if (this.introLeft <= 0) { this.phase = 'PLAY'; this.pushCaption('Go.', 'tm', 700); this.lastProgress = this.nowMs; }
-      this.timerText.setText(this.fmt(this.model.timeLeft));
-      this.focus = this.focusTarget(); this.updateLabel();
-      return;
-    }
-    if (this.phase === 'PLAY') {
-      const r = this.model.tick(dt);
-      for (const m of r.milestones) { void this.dc.audio.playVoice('tm_time_' + m); this.pushCaption(LINE_BY_ID['tm_time_' + m].text, 'tm'); }
-      this.idleTimer += dt;
-      if (r.lost) { this.onLost(this.model.faded ? 'The Thread frays past mending.' : 'The Thread runs out of time.'); }
-      this.movePlayer(dt);
-      this.maybeHint();
-      this.applyMusic();
-    }
-    this.animatePlayer();
-    this.timerText.setText(this.fmt(this.model.timeLeft)).setTint(this.model.timeLeft <= 10 ? 0xff8f8f : this.model.timeLeft <= 30 ? 0xffd48a : 0xfff1c9);
-    this.focus = this.phase === 'PLAY' ? this.focusTarget() : null;
-    this.updateLabel();
-    this.placePlayer();
-  }
-
-  private fmt(t: number): string { const s = Math.ceil(t); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
-
-  private updateEchoes(): void {
-    const cam = this.cameras.main;
-    let pointing = false;
-    for (const e of [...this.echoes]) {
-      if (this.nowMs > e.until) { this.tweens.add({ targets: e.spr, alpha: 0, duration: 400, onComplete: () => { e.spr.destroy(); e.ring.destroy(); } }); this.echoes.splice(this.echoes.indexOf(e), 1); continue; }
-      const sx = (e.x - cam.worldView.x) * ZOOM, sy = (e.y - cam.worldView.y) * ZOOM;
-      if (!pointing && (sx < 20 || sx > this.W - 20 || sy < 20 || sy > this.H - 20)) {
-        pointing = true;
-        this.offscreen.setPosition(Phaser.Math.Clamp(sx, 24, this.W - 24), Phaser.Math.Clamp(sy, 60, this.H - 130)).setAlpha(0.5 + 0.4 * Math.sin(this.nowMs / 180));
+  // ------------------------------------------------------------------ per-frame
+  update(_t: number, dt: number): void {
+    this.t += dt;
+    this.backdrop.tilePositionX += dt * 0.004; this.backdrop.tilePositionY += dt * 0.002;
+    const g = this.tetherG.clear();
+    for (const a of [this.me, this.ghost]) a?.sync();
+    if (this.mode === 'PLAY' || this.mode === 'LOCK') {
+      const v = this.v, me = this.me, gh = this.ghost;
+      if (v?.ghost && me && gh && this.mode === 'PLAY') {
+        const k = this.iso.S, x1 = me.px, y1 = me.py - 18 * k, x2 = gh.px, y2 = gh.py - 18 * k;
+        const strained = !!v.tether?.strained, pulse = strained ? 0.55 + 0.45 * Math.sin(this.t / 90) : 1;
+        const col = strained ? 0xe0304a : v.tether && v.tether.dist > 2 ? 0xc8e060 : 0x62e07a;
+        g.lineStyle(7, col, 0.22 * pulse).lineBetween(x1, y1, x2, y2);
+        g.lineStyle(2, col, 0.95 * pulse).lineBetween(x1, y1, x2, y2);
+        for (let i = 0; i < 3; i++) { const f = ((this.t / 1400 + i / 3) % 1); g.fillStyle(0xffffff, 0.8 * pulse).fillCircle(x1 + (x2 - x1) * f, y1 + (y2 - y1) * f, 2); }
       }
     }
-    if (!pointing) this.offscreen.setAlpha(0);
-  }
-
-  private maybeHint(): void {
-    if (this.nowMs - this.lastProgress < 38000 || this.nowMs - this.hintAt < 38000) return;
-    this.hintAt = this.nowMs;
-    const h = objectiveHint(this.model.state);
-    if (h.text) { this.pushCaption(h.text, 'tm', 4200); if (h.objectId && OBJECT_TILES[h.objectId]) this.ringAt(h.objectId, CYAN); }
-  }
-
-  // ---------------------------------------------------------------- movement
-  private wanted(): { dx: number; dy: number } {
-    const k = this.keys;
-    let dx = (k.D.isDown || k.RIGHT.isDown ? 1 : 0) - (k.A.isDown || k.LEFT.isDown ? 1 : 0);
-    let dy = (k.S.isDown || k.DOWN.isDown ? 1 : 0) - (k.W.isDown || k.UP.isDown ? 1 : 0);
-    if (!dx && !dy && this.stick.id >= 0) { dx = Math.abs(this.stick.dx) > 0.35 ? Math.sign(this.stick.dx) : 0; dy = Math.abs(this.stick.dy) > 0.35 ? Math.sign(this.stick.dy) : 0; }
-    return { dx, dy };
-  }
-
-  private movePlayer(dt: number): void {
-    const p = this.pl;
-    let budget = dt * SPEED; // tiles to travel this frame
-    for (let guard = 0; guard < 4 && budget > 0; guard++) {
-      if (!p.moving) {
-        let { dx, dy } = this.wanted();
-        if (dx || dy) this.path = [];
-        else if (this.path.length) { const n = this.path[0]; dx = n.tx - p.tx; dy = n.ty - p.ty; }
-        if (!dx && !dy) return;
-        p.fx = dx; p.fy = dy; p.dir = dirIndex(dx, dy);
-        // one axis per step (the sim moves on a 4-neighbour grid); alternate when both are held
-        const tryAxes: Array<[number, number]> = dx && dy ? (this.nowMs % 400 < 200 ? [[dx, 0], [0, dy]] : [[0, dy], [dx, 0]]) : [[dx, dy]];
-        let moved = false;
-        for (const [ax, ay] of tryAxes) {
-          const s = this.model.state, n = s.nodes[s.player.nodeId];
-          if (!getWalkability(n.world, n.flags, s.v2.realm)[p.ty + ay]?.[p.tx + ax]) continue;
-          const ev = this.model.dispatch({ type: 'MOVE', tx: p.tx + ax, ty: p.ty + ay });
-          if (ev.some(e => e.type === 'REJECTED')) continue;
-          if (this.model.state.v2.gridX !== p.tx + ax || this.model.state.v2.gridY !== p.ty + ay) return; // the Thread moved us
-          p.ax = p.tx + ax; p.ay = p.ty + ay; p.t = 0; p.moving = true; moved = true;
-          if (this.path.length && this.path[0].tx === p.ax && this.path[0].ty === p.ay) this.path.shift();
-          break;
-        }
-        if (!moved) {
-          this.path = [];
-          if (this.nowMs - this.blockedAt > 2500) { this.blockedAt = this.nowMs; const ev = this.model.dispatch({ type: 'MOVE', tx: p.tx + Math.sign(p.fx), ty: p.ty + (p.fx ? 0 : Math.sign(p.fy)) }); void ev; }
-          return;
-        }
-      }
-      const step = Math.min(budget, 1 - p.t);
-      p.t += step; budget -= step;
-      const x0 = px(p.tx), y0 = px(p.ty) + FEET, x1 = px(p.ax), y1 = px(p.ay) + FEET;
-      p.x = x0 + (x1 - x0) * p.t; p.y = y0 + (y1 - y0) * p.t;
-      if (p.t >= 1) { p.moving = false; p.tx = p.ax; p.ty = p.ay; p.x = x1; p.y = y1; }
-    }
-  }
-
-  private animatePlayer(): void {
-    const moving = this.pl.moving;
-    const key = `mu-${this.col}-${moving ? 'walk' : 'idle'}-${this.pl.dir}`;
-    if (this.player.anims.currentAnim?.key !== key) this.player.play(key);
-    this.placePlayer();
   }
 }

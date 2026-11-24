@@ -84,8 +84,8 @@ export class OfficeScene extends DCScene {
     this.dlg.hide();
     const make = (x: number, label: string, key: string, act: () => void) => {
       const y = 452;
-      const c = makeButton(this, x, y, key + '  ' + label, () => this.pick(act), { w: 440, size: 16 }).setDepth(1100);
-      const mark = this.txt(x - 196, y - 8, '>', 16, 'Pepper16-Bold', CYAN).setDepth(1101);
+      const c = makeButton(this, x, y, key + ' ' + label, () => this.pick(act), { w: 440, size: 14 }).setDepth(1100);
+      const mark = this.txt(x - 200, y - 8, '>', 16, 'Pepper16-Bold', CYAN).setDepth(1101);
       c.on('pointerover', () => this.focus(this.choices.findIndex(q => q.c === c)));
       this.choices.push({ c, mark, act });
     };

@@ -45,7 +45,7 @@
   {
    "id": "tm_intro_8",
    "who": "TIME_MASTER",
-   "text": "Well, they have three minutes to put themselves back together before their connection collapses.",
+   "text": "Well, they have a few dozen heartbeats to put themselves back together before their connection collapses.",
    "mood": "serious"
   },
   {
@@ -57,31 +57,43 @@
   {
    "id": "tm_start",
    "who": "TIME_MASTER",
-   "text": "Your brother is trapped in another time. Restore both beacons before the Thread fades.",
+   "text": "One of you lives in the past, one in the future. Record a loop, then catch up with yourself. Light the beacon in both.",
    "mood": "serious"
   },
   {
-   "id": "tm_time_120",
+   "id": "tm_loop_lock",
    "who": "TIME_MASTER",
-   "text": "Two minutes remain. Do try to look busy.",
+   "text": "The first loop is recorded. Now do try to keep up with yourself.",
+   "mood": "smug"
+  },
+  {
+   "id": "tm_beats_5",
+   "who": "TIME_MASTER",
+   "text": "Five beats left. Do try to look purposeful.",
    "mood": "sarcastic"
   },
   {
-   "id": "tm_time_60",
+   "id": "tm_beats_2",
    "who": "TIME_MASTER",
-   "text": "One minute. I am not saying it is hopeless. I am saying it is a minute.",
-   "mood": "sarcastic"
-  },
-  {
-   "id": "tm_time_30",
-   "who": "TIME_MASTER",
-   "text": "Thirty seconds. This is the part where one hurries.",
+   "text": "Two beats! Mushrooms! Please!",
    "mood": "urgent"
   },
   {
-   "id": "tm_time_10",
+   "id": "tm_paradox",
    "who": "TIME_MASTER",
-   "text": "Ten seconds! Mushrooms! Please!",
+   "text": "A paradox. Splendid. Truly.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_stage_clear",
+   "who": "TIME_MASTER",
+   "text": "Adequate. Next room.",
+   "mood": "smug"
+  },
+  {
+   "id": "tm_charge_low",
+   "who": "TIME_MASTER",
+   "text": "One chance remains. I would use it wisely. I would.",
    "mood": "urgent"
   },
   {

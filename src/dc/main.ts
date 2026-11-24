@@ -92,7 +92,9 @@ function syncOverlay(snap: Readonly<FlowSnapshot>): void {
 flow.subscribe((snap, e) => {
   if (!started) return;
   const pauseOnly = e.type === 'PAUSE' || e.type === 'RESUME';
-  if (pauseOnly) { syncOverlay(snap); game.scene.getScenes(true).forEach(s => (e.type === 'PAUSE' ? s.scene.pause() : s.scene.resume())); return; }
+  if (pauseOnly) { syncOverlay(snap); if (e.type === 'PAUSE') game.scene.getScenes(true).forEach(s => s.scene.pause());
+    else game.scene.getScenes(false).filter(s => s.scene.isPaused()).forEach(s => s.scene.resume());
+    return; }
   showState(snap);
 });
 $('dc-skip').onclick = () => { audio.skipVoice(); flow.dispatch({ type: 'SKIP' }); };
@@ -106,6 +108,14 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && GAMEPLAY.includes(flow.state)) flow.dispatch({ type: flow.snapshot().paused ? 'RESUME' : 'PAUSE' });
   if ((e.key === 'Enter' || e.key === ' ') && flow.skippable && flow.state !== 'TIME_MASTER_OFFICE' && !e.repeat) { /* scenes own Enter/Space for advancing dialogue; skip stays on the button */ }
 });
+// phones held upright: the 16:9 game is tiny, so ask for landscape (dismissible)
+const rot = $('dc-rotate');
+function checkOrientation(): void {
+  const portrait = innerHeight > innerWidth * 1.15 && matchMedia('(pointer: coarse)').matches && !sessionStorage.getItem('oos-rot-dismissed');
+  rot.style.display = portrait ? 'flex' : 'none';
+}
+$('dc-rotate-ok').onclick = () => { sessionStorage.setItem('oos-rot-dismissed', '1'); checkOrientation(); };
+window.addEventListener('resize', checkOrientation); window.addEventListener('orientationchange', checkOrientation); checkOrientation();
 window.addEventListener('pointerdown', () => audio.unlock(), { once: true });
 window.addEventListener('keydown', () => audio.unlock(), { once: true });
 document.addEventListener('visibilitychange', () => { if (document.hidden && GAMEPLAY.includes(flow.state) && !flow.snapshot().paused) flow.dispatch({ type: 'PAUSE' }); });

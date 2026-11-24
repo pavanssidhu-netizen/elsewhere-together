@@ -1,64 +1,51 @@
-# Out of Sync (V2)
+# OUT OF SYNC (Director's Cut)
 
-Two halves of one fictional symbiote wake up in diverging versions of the same sketched coastal hamlet. Uncertain events (an old lamp, a bridge, a signal mast, a flooded nursery, a tidal gate) split reality in two. At each one you can **keep** the better outcome for yourself, **send it across** to your partner at a cost to you, or **let it be**. Your partner acts on their own in their own branch. Align three shared anchors (Lantern, Greenhouse, Lighthouse) so the two worlds can meet, or let the thread fray until you fade. Either ending opens the causal archive: the full branch tree with both of your journeys.
+> Two mushrooms broke time. Now somebody has to put it back.
 
-TypeScript + Vite + Phaser 3 + DOM/CSS. The sim (`src/sim`, `src/world`) has no Phaser or DOM dependency and is fully deterministic.
+A small, funny, replayable browser game. Jensen (future) and Sam (past) touched an ancient beacon and split reality. The Time Master (a very serious voice who turns out to be very small) gives them a few dozen heartbeats to fix it.
 
-## Run
+Phaser 3 + TypeScript + Vite. Static build, no server, no network needed at runtime.
+
+## Run it
 ```
 npm install --registry https://registry.npmjs.org/
-npm run dev        # local dev
-npm test           # 42 sim tests (determinism, topology, fixed WIN/FADE/ALIEN replays, save/restore)
-npm run build      # static site in dist/ (index.html at root, relative paths)
-npx vite-node scripts/bots.ts -- --seeds 500   # headless playability sweep (7 bot policies)
-node e2e/run.mjs   # real-browser test (needs local playwright + chromium, see file header)
+npm run dev          # local dev server
+npm run build        # static site in dist/ (index.html at the root, relative paths)
+npm test             # 96 unit tests (flow, forest sim, audio plan, runner)
 ```
-Deploy `dist/` to any static host. It needs no network at runtime.
+Deploy `dist/` to any static host. `classic.html` is the earlier prototype (kept as a bonus).
 
-## How to play
-The beacon in the clearing split, and so did you. Relight yours, help them relight theirs, and bring the two flames into sync.
-
-- **Your side (amber runes, left of the beacon):** relight the beacon with fuel; make radio contact (power from the waterwheel plus the frequency carved across the stream, which you can only reach in the history where the river is diverted, so you follow the other history at the sluice); call through the Thread and tell them what you learned.
-- **Their side (cyan runes, right of the beacon):** they light their own beacon, find a way across their river (they need your sluice technique), and walk back to their beacon.
-- When all six runes glow, stand by the beacon. No objects ever cross between the worlds; only information does.
-- **Fading:** pushing the Thread while the worlds diverge (fire in dry brush, forced calls, strain) frays it through three warnings. Standing still never fades you. Rest at the thread or echo stones to recover.
+## The game
+1. **Title -> cosmic intro -> choose your brother.** Every cutscene is skippable.
+2. **Game 1, Time-Lock Rooms (3 isometric rooms, turn based).** Each room: pick who goes first (Sam = the PAST Builder, Jensen = the FUTURE Scout). You get 20 beats. Your recording then locks and you play the other brother while the first replays as a translucent Spore Ghost. Both must stand on their beacon conduits on the same beat.
+   - Sam (Past): plant roots on soil, pulse to grow vine bridges over gaps, coat vines in mineral sap so they survive into the future (uncoated vines turn to dust).
+   - Jensen (Future): absorb static charge from ruins, discharge it into conduit plates, drop Blueprint Pins (promises for Sam to keep), push crates into Time Rifts to send tools back.
+   - Tether: stay within 4 tiles of your twin or moves cost 2 beats; end a beat next to it for a Sync Boost (multiplier, refunds a beat).
+   - 3 Thread charges per run (5 in relaxed mode). Clear all three rooms to reunite without the Time Master.
+3. **Fail -> abduction -> the Time Master's office.** Beg ("Please, magnificent Time Master.") or refuse ("Absolutely not." leads to the soup ending).
+4. **Game 2, Stitch the Timeline (3-lane runner).** Steer the repair thread, dodge magenta broken branches (3 hits = fail), collect 3 anchors. Instant retry on failure.
+5. Four endings (forest reunion, soup, time repaired, time collapsed). All offer replay.
 
 ## Controls
-| | Desktop | Mobile |
+| | Keyboard | Touch |
 |---|---|---|
-| Move | WASD / arrows | D-pad |
-| Object actions (shown by the object) | E / Q / F | buttons |
-| Call through the Thread (1 fuel) | C | CALL button |
-| Replay last caption | L | L |
+| Game 1 move | Arrows / WASD | on-screen d-pad |
+| Game 1 A / B | Z or Space / X | A / B buttons |
+| Peek (hold) | C | C button |
+| Reset phase / End loop | R / Enter | small buttons |
+| Runner | Left/Right or A/D | swipe or two big buttons |
+| Pause | Esc | pause button |
+| Dialogue | Enter / Space / click | tap |
 
-## Designer shortcuts
-- Title **DEMO** plays a winning route step by step through the real engine.
-- `?debug=1` exposes `window.__et`.
-- Tunables: `src/sim/tuning.ts` (all balance constants), `src/sim/events.ts`, `src/sim/agent.ts`, `src/sim/anchors.ts`, `src/world/topology.ts` (map and walkability), `src/content/dialogue.ts`, `src/game/scribble.ts` (art), `src/audio/audioEngine.ts` (synth music).
+Phones: landscape is best (a rotate prompt appears in portrait). Relaxed mode (title screen) gives longer loops and more charges.
 
-## Playability (bot sweep, 300 seeds, 600-tick cap)
-| Policy | Win | Fade | Timeout | Softlock |
-|---|---|---|---|---|
-| PLANNER | 100% | 0 | 0 | 0 |
-| NOVICE (walks to the hint target, follows the suggested verb 60% of the time) | 100% | 0 | 0 | 0 |
-| ECHO_HEAVY | 100% | 0 | 0 | 0 |
-| LET_GO_HEAVY | 95% | 0 | 5% | 0 |
-| SELF_ONLY (never sends anything across) | 43% | 0 | 57% | 0 |
-| RANDOM_CURIOUS | 3% | 0 | 97% | 0 |
-| MALICIOUS (maximises drift) | 0 | 100% | 0 | 0 |
+## Debug and testing
+- `?jump=<STATE>&char=SAM|JENSEN&seed=N` starts at any flow state (`FOREST_GAME`, `TIME_MASTER_OFFICE`, `THREAD_RUNNER`, `FINAL_ENDING`, ...).
+- `?f2debug=1` adds `window.__forest2.solve(room, order)` (the reference solutions).
+- `node scripts/dc_qa_shots.mjs` screenshots every scene. `node scripts/dc_qa_forest.mjs` and `node scripts/dc_qa_fullrun.mjs` drive the real UI with real key presses through every branch.
 
-These are synthetic policies. They test possibility, fairness and softlocks, not fun or clarity.
+## Audio
+All sound is currently **synthesised in the browser** (music, voices, effects). ElevenLabs audio is **not generated yet**: it needs a valid secret key and the creative director's approval of samples. `python3 scripts/generate_dc_audio.py` is a dry run by default (prints the plan and credit estimate, no network call). See `docs/DC_AUDIO.md`. Any mp3 placed under `public/assets/dc/audio/{voice,music,sfx}/<id>.mp3` is picked up automatically.
 
-## Audio and ElevenLabs
-See `docs/AUDIO.md`. Music is a procedural Web Audio synth; no ElevenLabs music is generated. `scripts/generate_audio.py` prerenders the 9 voice lines and 6 SFX. It is a dry run by default (about 800 credits estimated) and only calls the API with `--go`. The key comes from env or `--key-file` and is never bundled; `api_keys/` is gitignored. Until you run it, the game uses synthesized stand-ins and captions.
-
-## Known limitations
-- Headless Chromium only (desktop 1280x800, simulated phone 360x740). No real phone, iOS Safari or sound-on listening test.
-- No human cold-start playtest yet.
-- Nearly every win aligns anchors in the order Lantern, Greenhouse, Lighthouse.
-- Legacy commands (BEGIN_FORK, RESOLVE_FORK, ACTIVATE_ANCHOR, RETRACE) still exist without proximity checks; the UI and bots use only MOVE/INTERACT.
-
-## Credits and attributions
-- **Art:** "Scribble Dungeons" by Kenney (kenney.nl), CC0. Files and licence in `public/assets/scribble/`.
-- **Voices and SFX:** ElevenLabs (when generated). Music is synthesised in the browser.
-- **Science referenced (the game is fiction, not physics):** Everett (1957), relative-state formulation and the many-worlds interpretation; DeWitt (1970s), popularisation of many-worlds; Zurek (2003), decoherence, Reviews of Modern Physics; Bronstein (2015), *Mutualism*, Oxford University Press.
+## Credits and licences
+See `ASSET_CREDITS.md`. Several packs forbid redistributing the raw files as assets; the files in `public/assets/dc` ship only as part of this game, and the original zips are git-ignored.

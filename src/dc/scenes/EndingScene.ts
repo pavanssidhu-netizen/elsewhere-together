@@ -24,27 +24,28 @@ export class EndingScene extends DCScene {
     if (kind === 'RUNNER_COLLAPSE') this.collapseBackdrop(reduce); else this.brightBackdrop(kind, reduce);
 
     // parchment card
-    const panel = this.add.image(this.W / 2, 136, 'ui/panel-frame').setScale(0.82, 0.62).setDepth(200);
+    const panel = this.add.image(this.W / 2, 150, 'ui/panel-frame').setScale(0.92, 0.72).setDepth(2000);
     const mid = this.W / 2;
     const title = { FOREST_REUNION: 'REUNITED', RUNNER_REPAIRED: 'TIME REPAIRED', RUNNER_COLLAPSE: 'TIME COLLAPSED' }[kind];
     const tag = { FOREST_REUNION: 'The brothers fixed it themselves.', RUNNER_REPAIRED: 'Entirely the Time Master\'s doing, apparently.', RUNNER_COLLAPSE: 'Everything is fine. Somewhere. Probably.' }[kind];
-    const t = this.add.bitmapText(mid, 62, 'fonts/Pepper16-Bold', title, 40).setOrigin(0.5).setTint(kind === 'RUNNER_COLLAPSE' ? 0x8a1030 : 0x4a1c0c).setDepth(201);
-    if (t.width > 380) t.setScale(380 / t.width);
-    this.add.bitmapText(mid, 106, 'fonts/Aurora16-Smooth', tag, 16).setOrigin(0.5).setTint(0x2a1608).setMaxWidth(380).setCenterAlign().setDepth(201);
+    const t = this.add.bitmapText(mid, 70, 'fonts/Pepper16-Bold', title, 40).setOrigin(0.5).setTint(kind === 'RUNNER_COLLAPSE' ? 0x8a1030 : 0x4a1c0c).setDepth(2001);
+    if (t.width > 330) t.setScale(330 / t.width);
+    const tg = this.add.bitmapText(mid, 104, 'fonts/Aurora16-Smooth', tag, 16).setOrigin(0.5, 0).setTint(0x2a1608).setMaxWidth(400).setCenterAlign().setDepth(2001);
     void panel;
 
     let lines: string[] = [];
     if (kind === 'FOREST_REUNION') {
       const f = this.dc.session.forestSummary;
-      if (f) lines = [`Time left: ${mmss(f.secondsLeft)}`, `Branches created: ${f.branches}`, `Alternate history: ${f.usedAlternateHistory ? 'used' : 'not needed'}`, `Calls made: ${f.callsMade}`];
+      if (f) lines = f.decisions.slice(0, 4).map(d => d.replace(/^Stage (\d) cleared as (\w+) first, (\d+) beats spare/, 'Room $1: $2 first, $3 spare'));
     } else if (kind === 'RUNNER_REPAIRED') {
       const r = this.dc.session.runnerStats;
       lines = ['The mushrooms did the running.', 'He took the credit.'];
       if (r) lines.push(`Anchors: ${r.anchors}   Hits: ${r.hits}`);
     } else {
-      lines = ['The Time Master cried. Loudly.', 'The mushrooms are in several pieces.'];
+      lines = ['The Time Master cried loudly.', 'The mushrooms are in several pieces.'];
     }
-    lines.forEach((l, i) => this.add.bitmapText(mid, 142 + i * 24, 'fonts/Aurora16-Smooth', l, 16).setOrigin(0.5).setTint(0x3a2412).setDepth(201));
+    let ly = tg.y + tg.height + 10;
+    for (const l of lines) { const lt = this.add.bitmapText(mid, ly, 'fonts/Aurora16-Smooth', l, 16).setOrigin(0.5, 0).setTint(0x3a2412).setMaxWidth(400).setCenterAlign().setDepth(2001); ly += lt.height + 5; }
 
     // buttons
     const replay = () => { if (this.sent) return; this.sent = true; this.send({ type: 'REPLAY' }); };

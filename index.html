@@ -16,6 +16,7 @@
     #dc-pause-overlay { display:none; position:absolute; inset:0; background:rgba(5,6,13,.78); pointer-events:auto; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:#d7f6f5; }
     #dc-pause-overlay.open { display:flex; }
     #dc-pause-overlay button { min-width:220px; }
+    #dc-rotate { display:none; position:absolute; inset:0; background:rgba(5,6,13,.94); pointer-events:auto; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#d7f6f5; z-index:20; }
     #dc-toast { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); color:#d7f6f5; background:rgba(12,14,30,.8); padding:6px 12px; display:none; border:1px solid #7be0df; }
   </style>
 </head>
@@ -26,6 +27,7 @@
     <div id="dc-pause-overlay"><div style="font-size:28px;letter-spacing:4px">PAUSED</div>
       <button id="dc-resume">RESUME</button><button id="dc-relaxed">RELAXED MODE: OFF</button><button id="dc-restart-game" style="display:none">RESTART THIS GAME</button><button id="dc-to-title">BACK TO TITLE</button></div>
     <div id="dc-toast"></div>
+    <div id="dc-rotate"><div style="font-size:42px">&#8635;</div><div style="font-size:18px;margin:8px 0 14px">TURN YOUR PHONE SIDEWAYS<br>for the best view</div><button id="dc-rotate-ok">PLAY ANYWAY</button></div>
   </div>
   <script type="module" src="/src/dc/main.ts"></script>
 </body>

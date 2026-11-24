@@ -6,9 +6,9 @@ import { CYAN, PINK, ADD, crispFonts, myc, setMyc, flipAnim, buildForest, tintAl
 interface Side { who: Character; color: 'red' | 'blue'; title: string; sub: string; perk: string; x0: number; tint: number; glow: number }
 const SIDES: Side[] = [
   { who: 'JENSEN', color: 'red', title: 'JENSEN', sub: 'THE FUTURE', x0: 0, tint: 0x9fc0ff, glow: CYAN,
-    perk: 'Lives in the future. Inherits whatever Sam changes. Can warn Sam through the Thread.' },
+    perk: 'The Scout. Survey the ruins, pin the fixes, then speed-run.' },
   { who: 'SAM', color: 'blue', title: 'SAM', sub: 'THE PAST', x0: 490, tint: 0xf0c890, glow: 0xffb24a,
-    perk: 'Lives in the past. Every change ripples forward to Jensen. Cannot be warned of what is coming.' },
+    perk: 'The Builder. Grow bridges, then coat them in sap.' },
 ];
 
 /** CHARACTER_SELECT: the two realities after the split, one brother in each. */
@@ -38,9 +38,9 @@ export class SelectScene extends DCScene {
       const hl = this.add.rectangle(s.x0, 0, w, H, 0xffffff, 0).setOrigin(0).setBlendMode(ADD).setDepth(3);
       this.txt(cx, 46, s.sub, 16, 'Pepper16-Bold', s.glow).setOrigin(0.5).setScale(2).setDepth(5);
       // name plate
-      const img = this.add.image(0, 0, 'ui/dialog-box'); const k = 410 / img.width; img.setScale(k);
-      const nm = this.txt(-170, -img.height * k / 2 + 24, s.title, 16, 'Pepper16-Bold', 0x4a1c0c).setScale(1.25);
-      const body = this.txt(-170, -img.height * k / 2 + 52, s.perk, 16, 'Aurora16-Smooth', 0x2a1608).setMaxWidth(340);
+      const img = this.add.image(0, 0, 'ui/dialog-box'); const k = 440 / img.width; img.setScale(k);
+      const nm = this.txt(-158, -img.height * k / 2 + 30, s.title, 16, 'Pepper16-Bold', 0x4a1c0c).setScale(1.25);
+      const body = this.txt(-158, -img.height * k / 2 + 56, s.perk, 14, 'Aurora16-Smooth', 0x2a1608).setMaxWidth(326);
       const plate = this.add.container(cx, 426, [img, nm, body]).setDepth(6);
       const zone = this.add.zone(s.x0, 0, w, H).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(10);
       zone.on('pointerover', () => this.focus(i));
@@ -63,7 +63,7 @@ export class SelectScene extends DCScene {
     this.txt(mid, 12, 'CHOOSE YOUR BROTHER', 16, 'Pepper16-Bold', 0xfff1c9).setOrigin(0.5).setDepth(11);
     const foot = this.add.rectangle(mid, 516, W, 48, 0x03040a, 0.78).setDepth(11);
     void foot;
-    this.txt(mid, 505, 'The other brother will act on his own.', 16, 'Aurora16-Smooth', 0xfff1c9).setOrigin(0.5).setScale(1.25).setDepth(12);
+    this.txt(mid, 507, 'The one you do not pick replays as a ghost.', 16, 'Aurora16-Smooth', 0xfff1c9).setOrigin(0.5).setDepth(12);
     this.txt(mid, 527, '<  >  choose      ENTER  confirm', 16, 'Aurora16-Smooth', 0x9fb0b0).setOrigin(0.5).setScale(0.8).setDepth(12);
     this.txt(W - 14, 520, 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'), 16, 'Aurora16-Smooth', this.dc.settings.relaxed ? 0x9ff0a0 : 0x9fb0b0).setOrigin(1, 0.5).setDepth(12);
 

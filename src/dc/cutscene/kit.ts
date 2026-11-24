@@ -114,7 +114,8 @@ export class Caption {
   show(id: string): number {
     const l = LINE_BY_ID[id];
     this.name.setText(l.who === 'TIME_MASTER' ? 'THE TIME MASTER' : l.who).setTint(l.who === 'JENSEN' ? 0xff8a8a : l.who === 'SAM' ? 0x8ab4ff : CYAN);
-    this.body.setText(l.text).setY(l.text.length > 62 ? -4 : 6);
+    const long = l.text.length > 62;
+    this.body.setFontSize(long ? 20 : 24).setText(l.text).setY(long ? -14 : 6);
     this.c.setVisible(true).setAlpha(0);
     this.c.scene.tweens.add({ targets: this.c, alpha: 1, duration: 200 });
     return l.text.length;

@@ -20,7 +20,7 @@ const RUNE_FRAMES = [3, 11, 19, 27, 35];
 
 const hazKey = (row: number, lane: number) => 1_000_000 + row * 4 + lane;
 type Phase = 'ready' | 'play' | 'ended';
-interface RowVis { c: Phaser.GameObjects.Container; row: Row; kind: 'hazard' | 'anchor'; lane: number }
+interface RowVis { c: Phaser.GameObjects.Container; row: Row; idx: number; kind: 'hazard' | 'anchor'; lane: number }
 
 export class RunnerScene extends DCScene {
   sim!: RunnerSim;
@@ -37,7 +37,9 @@ export class RunnerScene extends DCScene {
   private spawnIdx = 0;
   private flashT = 0;
   private ended = false;
+  private exitAt = 0;
   private swipeStartX = new Map<number, number>();
+  private swipeDir = new Map<number, Move>();
   private consumed = new Set<number>();
   private bg: { ts: Phaser.GameObjects.TileSprite; k: number }[] = [];
   private planets: { img: Phaser.GameObjects.Image; x: number; k: number; off: number }[] = [];
@@ -60,8 +62,8 @@ export class RunnerScene extends DCScene {
   create(): void {
     // every restart builds a fresh scene state (the same Scene object is re-run by the flow)
     this.phase = 'ready'; this.readyT = 0; this.lastCount = -1; this.pendingMove = 0; this.bgDist = 0; this.trailDist = 0;
-    this.headX = LANE_X[1]; this.trail = []; this.vis = new Map(); this.spawnIdx = 0; this.flashT = 0; this.ended = false;
-    this.swipeStartX = new Map(); this.consumed = new Set(); this.bg = []; this.planets = []; this.healthPips = []; this.anchorPips = [];
+    this.headX = LANE_X[1]; this.trail = []; this.vis = new Map(); this.spawnIdx = 0; this.flashT = 0; this.ended = false; this.exitAt = 0;
+    this.swipeStartX = new Map(); this.swipeDir = new Map(); this.consumed = new Set(); this.bg = []; this.planets = []; this.healthPips = []; this.anchorPips = [];
 
     const seed = this.snap?.runnerSeed ?? this.snap?.baseSeed ?? 1;
     this.sim = new RunnerSim(seed, { relaxed: this.dc.settings.relaxed });
@@ -157,10 +159,10 @@ export class RunnerScene extends DCScene {
     for (let i = 0; i < MAX_HITS; i++) {
       this.healthPips.push(this.add.image(34 + i * 40, 46, 'runner/Diamond').setScale(2.6).setTint(CYAN).setDepth(D));
     }
-    const lbl = this.txt(this.W - 20, 8, 'ANCHORS', 16, 'Aurora16-Smooth', 0xffe2a8).setDepth(D);
+    const lbl = this.txt(this.W - 104, 8, 'ANCHORS', 16, 'Aurora16-Smooth', 0xffe2a8).setDepth(D);
     lbl.setOrigin(1, 0);
     for (let i = 0; i < ANCHORS_TO_WIN; i++) {
-      const pip = this.add.image(this.W - 140 + i * 44 + 22, 46, 'portals/tide_rune_circle', 0).setScale(0.62).setAlpha(0.3).setDepth(D);
+      const pip = this.add.image(this.W - 224 + i * 44 + 22, 46, 'portals/tide_rune_circle', 0).setScale(0.62).setAlpha(0.3).setDepth(D);
       this.anchorPips.push(pip);
     }
     this.txt(this.W / 2, 8, 'TIMELINE', 16, 'Aurora16-Smooth', 0xffffff).setOrigin(0.5, 0).setDepth(D);
@@ -188,14 +190,17 @@ export class RunnerScene extends DCScene {
   }
 
   private bindInput(): void {
-    this.input.addPointer(2);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => { if (!this.consumed.has(p.id)) this.swipeStartX.set(p.id, p.x); });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (!p.isDown || this.consumed.has(p.id)) return;
       const s = this.swipeStartX.get(p.id); if (s === undefined) return;
-      if (Math.abs(p.x - s) >= SWIPE_PX) { this.press(p.x > s ? 1 : -1); this.swipeStartX.set(p.id, p.x); }
+      if (Math.abs(p.x - s) < SWIPE_PX) return;
+      const dir: Move = p.x > s ? 1 : -1;
+      this.swipeStartX.set(p.id, p.x);
+      // one lane per swipe: a longer drag in the same direction does not repeat, reversing the drag does
+      if (this.swipeDir.get(p.id) !== dir) { this.swipeDir.set(p.id, dir); this.press(dir); }
     });
-    const end = (p: Phaser.Input.Pointer) => { this.swipeStartX.delete(p.id); this.consumed.delete(p.id); };
+    const end = (p: Phaser.Input.Pointer) => { this.swipeStartX.delete(p.id); this.swipeDir.delete(p.id); this.consumed.delete(p.id); };
     this.input.on('pointerup', end); this.input.on('pointerupoutside', end);
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.repeat) return;
@@ -230,7 +235,7 @@ export class RunnerScene extends DCScene {
       const mv = this.pendingMove; this.pendingMove = 0;
       const evs = this.sim.step({ move: mv }, dt);
       for (const e of evs) this.onEvent(e);
-    }
+    } else if (this.exitAt && this.time.now >= this.exitAt) { this.exitAt = 0; this.send({ type: this.sim.result.status === 'won' ? 'RUNNER_WON' : 'RUNNER_LOST' }); return; }
     this.render(dt);
   }
 
@@ -311,10 +316,8 @@ export class RunnerScene extends DCScene {
       fx.play('dcrun-explosion'); fx.once('animationcomplete', () => fx.destroy());
       this.head.setVisible(false); this.trailG.clear(); this.trail = [];
     }
-    this.time.delayedCall(won ? 1500 : 1100, () => {
-      this.dc.session.runnerStats = { hits: r.hits, anchors: r.anchors, seed: this.sim.seed, won };
-      this.send({ type: won ? 'RUNNER_WON' : 'RUNNER_LOST' });
-    });
+    this.dc.session.runnerStats = { hits: r.hits, anchors: r.anchors, seed: this.sim.seed, won };
+    this.exitAt = this.time.now + (won ? 1500 : 1100);
   }
 
   // ---- drawing -------------------------------------------------------------------------------------------------
@@ -371,19 +374,23 @@ export class RunnerScene extends DCScene {
     const yOf = (i: number) => PLAYER_Y - (this.rowDist[i] - dist);
     while (this.spawnIdx < rows.length && yOf(this.spawnIdx) > -90) this.spawn(this.spawnIdx++);
     for (const [i, v] of this.vis) {
-      const y = yOf(i); v.c.y = y;
-      if (y > this.H + 100) { v.c.destroy(); this.vis.delete(i); }
+      const y = yOf(v.idx); v.c.y = y;
+      if (y > this.H + 100) { this.dropVis(v); this.vis.delete(i); }
     }
+  }
+
+  /** Looping tweens keep running on destroyed targets, so kill them with the object. */
+  private dropVis(v: RowVis): void {
+    this.tweens.killTweensOf([v.c, ...(v.c.list as Phaser.GameObjects.GameObject[])]);
+    v.c.destroy();
   }
 
   private spawn(i: number): void {
     const row = this.sim.rows[i];
-    const vv = row.variant;
     for (let l = 0; l < LANES; l++) {
       if (row.blocked & (1 << l)) { this.vis.set(hazKey(i, l), this.hazardVis(row, l, i)); }
     }
     if (row.anchorLane >= 0) this.vis.set(i, this.anchorVis(row, i));
-    void vv;
   }
 
   private hazardVis(row: Row, lane: number, i: number): RowVis {
@@ -402,8 +409,7 @@ export class RunnerScene extends DCScene {
     });
     const c = this.add.container(LANE_X[lane], -200, parts).setDepth(15);
     this.tweens.add({ targets: c, angle: { from: -4, to: 4 }, duration: 260 + v * 20, yoyo: true, repeat: -1 });
-    void i;
-    return { c, row, kind: 'hazard', lane };
+    return { c, row, idx: i, kind: 'hazard', lane };
   }
 
   private anchorVis(row: Row, i: number): RowVis {
@@ -417,8 +423,7 @@ export class RunnerScene extends DCScene {
     const c = this.add.container(LANE_X[lane], -200, [glow, circle, dia, rune]).setDepth(16);
     this.tweens.add({ targets: [glow, dia], scale: '*=1.18', duration: 420, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: dia, angle: 360, duration: 3200, repeat: -1 });
-    void i;
-    return { c, row, kind: 'anchor', lane };
+    return { c, row, idx: i, kind: 'anchor', lane };
   }
 
   private drawBar(p: number): void {

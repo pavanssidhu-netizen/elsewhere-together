@@ -117,6 +117,8 @@ for (const f of ['Aurora16-Smooth', 'Jelly16-Regular', 'Pepper16-Bold', 'Karma16
   else { fs.mkdirSync(path.join(OUT, 'fonts'), { recursive: true }); fs.copyFileSync(path.join(SRC, PACKS.fonts.dir, rel), path.join(OUT, 'fonts', `${f}.fnt`)); }
 }
 
+import { execFileSync } from 'node:child_process';
+execFileSync('node', ['scripts/fnt_to_xml.mjs', ...fs.readdirSync(path.join(OUT, 'fonts')).filter(f => f.endsWith('.fnt')).map(f => path.join(OUT, 'fonts', f))], { stdio: 'inherit' });
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
 let bytes = 0; for (const m of manifest) bytes += fs.statSync(path.join('public', m.outputPath)).size;
 console.log(manifest.length, 'files imported,', (bytes / 1e6).toFixed(1), 'MB');
