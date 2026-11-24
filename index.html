@@ -2,11 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Out of Sync</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>OUT OF SYNC</title>
+  <style>
+    html, body { margin:0; height:100%; background:#05060d; overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none; font-family:ui-monospace,Menlo,Consolas,monospace; }
+    #dc-game { position:fixed; inset:0; }
+    #dc-game canvas { image-rendering:pixelated; image-rendering:crisp-edges; }
+    #dc-ui { position:fixed; inset:0; pointer-events:none; z-index:10; }
+    #dc-ui button { pointer-events:auto; min-width:44px; min-height:44px; background:rgba(12,14,30,.78); color:#d7f6f5; border:1px solid #7be0df; font:inherit; font-size:14px; cursor:pointer; }
+    #dc-ui button:hover { background:rgba(40,60,90,.9); }
+    #dc-top { position:absolute; top:8px; right:8px; display:flex; gap:8px; }
+    #dc-skip { display:none; }
+    #dc-pause-overlay { display:none; position:absolute; inset:0; background:rgba(5,6,13,.78); pointer-events:auto; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:#d7f6f5; }
+    #dc-pause-overlay.open { display:flex; }
+    #dc-pause-overlay button { min-width:220px; }
+    #dc-toast { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); color:#d7f6f5; background:rgba(12,14,30,.8); padding:6px 12px; display:none; border:1px solid #7be0df; }
+  </style>
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.ts"></script>
+  <div id="dc-game"></div>
+  <div id="dc-ui">
+    <div id="dc-top"><button id="dc-skip" aria-label="Skip">SKIP &#9654;&#9654;</button><button id="dc-mute" aria-label="Sound">SND</button><button id="dc-pause" aria-label="Pause">&#10074;&#10074;</button></div>
+    <div id="dc-pause-overlay"><div style="font-size:28px;letter-spacing:4px">PAUSED</div>
+      <button id="dc-resume">RESUME</button><button id="dc-relaxed">RELAXED MODE: OFF</button><button id="dc-restart-game" style="display:none">RESTART THIS GAME</button><button id="dc-to-title">BACK TO TITLE</button></div>
+    <div id="dc-toast"></div>
+  </div>
+  <script type="module" src="/src/dc/main.ts"></script>
 </body>
 </html>

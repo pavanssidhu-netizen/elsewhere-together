@@ -23,7 +23,8 @@ export type FlowEvent =
   | { type: 'RETRY' }                                   // instant retry of the current minigame
   | { type: 'REPLAY' }                                  // whole story again
   | { type: 'RESTART_FOREST' } | { type: 'RESTART_RUNNER' }
-  | { type: 'PAUSE' } | { type: 'RESUME' };
+  | { type: 'PAUSE' } | { type: 'RESUME' }
+  | { type: 'QUIT' };                                   // abandon the run, back to the title (from a pause menu)
 
 export interface Outcome { game: 'FOREST' | 'RUNNER'; result: 'WIN' | 'LOSE'; seed: number; character: Character | null }
 
@@ -93,6 +94,9 @@ export class FlowController {
     switch (e.type) {
       case 'PAUSE': if (GAMEPLAY.has(s.state)) s.paused = true; break;
       case 'RESUME': s.paused = false; break;
+      case 'QUIT':
+        if (s.state !== 'TITLE') { s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; s.attempts = { forest: 0, runner: 0 }; this.go('TITLE'); }
+        break;
       case 'REPLAY':
         if (s.ending !== null) { // full story again; keep the base seed, bump nothing else
           s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; this.go('TITLE');

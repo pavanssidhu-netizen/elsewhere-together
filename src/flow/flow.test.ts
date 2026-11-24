@@ -81,4 +81,9 @@ describe('flow controller', () => {
     run(f, { type: 'START' }, { type: 'SKIP' }, { type: 'SELECT', character: 'SAM' });
     expect(f.state).toBe('FOREST_GAME');
   });
+  it('QUIT from any state returns to a clean title (pause menu)', () => {
+    const f = toForest(); run(f, { type: 'PAUSE' }, { type: 'QUIT' });
+    expect(f.state).toBe('TITLE'); expect(f.snapshot().paused).toBe(false); expect(f.snapshot().character).toBeNull();
+    expect(f.dispatch({ type: 'QUIT' })).toBe(false);
+  });
 });

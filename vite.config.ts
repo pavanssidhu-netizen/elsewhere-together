@@ -5,7 +5,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     chunkSizeWarningLimit: 1500,
-    rollupOptions: { output: { manualChunks: (id: string) => (id.includes('node_modules/phaser') ? 'phaser' : undefined) } },
+    rollupOptions: { input: { main: 'index.html', classic: 'classic.html' }, output: { manualChunks: (id: string) => (id.includes('node_modules/phaser') ? 'phaser' : undefined) } },
   },
   test: { include: ['src/sim/tests/**/*.test.ts', 'src/flow/**/*.test.ts'] },
 } as any);
