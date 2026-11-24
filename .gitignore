@@ -8,3 +8,4 @@ audio_src/
 incoming/*.zip
 incoming/*/
 out-of-sync-web.zip
+asset_zips/
