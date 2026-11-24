@@ -7,7 +7,6 @@ import sharp from 'sharp';
 
 const SRC = path.resolve(process.argv[2] || '/tmp/A');
 const OUT = path.resolve('public/assets/dc');
-fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 
 const PACKS = {
@@ -121,6 +120,11 @@ for (const f of ['Aurora16-Smooth', 'Jelly16-Regular', 'Pepper16-Bold', 'Karma16
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
 let bytes = 0; for (const m of manifest) bytes += fs.statSync(path.join('public', m.outputPath)).size;
 console.log(manifest.length, 'files imported,', (bytes / 1e6).toFixed(1), 'MB');
+
+// ---- ADD:CUT1 (agent CUT-1 may add `await put(...)` lines here)
+// ---- ADD:CUT2 (agent CUT-2 may add `await put(...)` lines here)
+// ---- ADD:FOREST (agent FOREST may add `await put(...)` lines here)
+// ---- ADD:RUNNER (agent RUNNER may add `await put(...)` lines here)
 
 // ---- generate the typed registry the Phaser BootScene loads from
 const SHEET_SIZES = [

@@ -21,6 +21,8 @@ export const LINES: Line[] = [
   { id: 'tm_time_30', who: 'TIME_MASTER', text: 'Thirty seconds. This is the part where one hurries.', mood: 'urgent' },
   { id: 'tm_time_10', who: 'TIME_MASTER', text: 'Ten seconds! Mushrooms! Please!', mood: 'urgent' },
   { id: 'tm_forest_fail', who: 'TIME_MASTER', text: 'And that is time. Splendid. Truly.', mood: 'sarcastic' },
+  { id: 'tm_forest_win', who: 'TIME_MASTER', text: 'Well. They did it without me. How inconvenient.', mood: 'sarcastic' },
+  { id: 'tm_partner_hint', who: 'TIME_MASTER', text: 'Your brother is trying something. Look for the cyan light.', mood: 'smug' },
   { id: 'jensen_cheer', who: 'JENSEN', text: 'Yay!', mood: 'cheery' },
   { id: 'sam_cheer', who: 'SAM', text: 'Woo!', mood: 'cheery' },
   { id: 'jensen_hmm', who: 'JENSEN', text: 'Hm?', mood: 'cheery' },
