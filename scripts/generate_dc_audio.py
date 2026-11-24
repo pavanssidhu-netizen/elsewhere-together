@@ -137,8 +137,37 @@ def generate(it, key, tts_model):
     return post("/v1/sound-generation", key, {"text": it["text"], "duration_seconds": it["duration"], "prompt_influence": 0.5}, q)
 
 
+def check_key(args):
+    """Free sanity check: GET /v1/user/subscription (credits) and GET /v1/voices (ids + names). Prints no secret."""
+    key = read_key(args.key_file)
+    if not key.startswith("sk_"):
+        print("NOT VALID: the value does not start with 'sk_' (length %d). That is a key ID, not the secret key. Create a new key in ElevenLabs and copy the sk_... value shown once." % len(key), file=sys.stderr)
+        return 2
+    def get(path):
+        req = urllib.request.Request(API + path, headers={"xi-api-key": key, "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8"))
+    ok = True
+    try:
+        sub = get("/v1/user/subscription")
+        left = sub.get("character_limit", 0) - sub.get("character_count", 0)
+        print("key accepted. tier=%s credits left=%s of %s" % (sub.get("tier"), left, sub.get("character_limit")))
+    except urllib.error.HTTPError as e:
+        ok = False; print("subscription check failed: HTTP %d (%s). A restricted key may lack 'user' read permission; that is not fatal." % (e.code, e.read()[:160].decode("utf8", "replace")))
+    try:
+        voices = get("/v1/voices").get("voices", [])
+        print("%d voices on this account (id  name  labels):" % len(voices))
+        for v in voices[:60]:
+            lab = v.get("labels") or {}
+            print("  %s  %s  %s" % (v.get("voice_id"), v.get("name"), ",".join(str(x) for x in lab.values())))
+    except urllib.error.HTTPError as e:
+        ok = False; print("voice list failed: HTTP %d (%s). Needs the 'voices' read permission." % (e.code, e.read()[:160].decode("utf8", "replace")))
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--check", action="store_true", help="validate the key with FREE read-only calls: shows plan, credits left and your voices. Spends nothing, never prints the key.")
     ap.add_argument("--go", action="store_true", help="really call ElevenLabs (needs a key starting with sk_)")
     ap.add_argument("--key-file", help="file holding the key (env ELEVENLABS_API_KEY wins)")
     ap.add_argument("--only", action="append", default=[], help="voice|music|sfx|<id>|<kind>:<id>, repeatable")
@@ -149,6 +178,8 @@ def main():
     ap.add_argument("--sam-voice", default=os.environ.get("DC_SAM_VOICE", DEFAULT_VOICES["SAM"]))
     ap.add_argument("--tts-model", default=TTS_MODEL)
     args = ap.parse_args()
+    if args.check:
+        return check_key(args)
 
     items = [it for it in load_plan(args) if selected(it, args.only)]
     todo = [it for it in items if args.force or not it["exists"]]
