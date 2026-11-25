@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DCScene } from '../base';
 import { DialogueBox } from '../ui/dialogue';
 import { makeButton } from '../ui/button';
+import { noFit } from '../ui/fit';
 import { buildOffice, type Room } from '../office/room';
 import { colourOf, myconid, mycPlay, flip, onShutdown, wait, CYAN } from '../office/fx';
 
@@ -85,7 +86,7 @@ export class OfficeScene extends DCScene {
     const make = (x: number, label: string, key: string, act: () => void) => {
       const y = 452;
       const c = makeButton(this, x, y, key + ' ' + label, () => this.pick(act), { w: 440, size: 14 }).setDepth(1100);
-      const mark = this.txt(x - 200, y - 8, '>', 16, 'Pepper16-Bold', CYAN).setDepth(1101);
+      const mark = noFit(this.txt(x - 200, y - 8, '>', 16, 'Pepper16-Bold', CYAN)).setDepth(1101);
       c.on('pointerover', () => this.focus(this.choices.findIndex(q => q.c === c)));
       this.choices.push({ c, mark, act });
     };

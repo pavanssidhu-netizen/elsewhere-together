@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { DCScene } from '../base';
-import { TITLE, TAGLINE } from '../content/lines';
+import { TITLE } from '../content/lines';
 import { makeButton } from '../ui/button';
-import { CYAN, ADD, crispFonts, myc, flipAnim } from '../cutscene/kit';
+import { boxText, noFit } from '../ui/fit';
+import { ADD, crispFonts } from '../cutscene/kit';
 
-/** Dark cosmic parallax, the logo, two idling mushrooms with a faint anomaly between them. */
+/** Dark cosmic parallax, the logo, and three buttons. Deliberately ambiguous: no characters, no tagline. */
 export class TitleScene extends DCScene {
   constructor() { super('TitleScene'); }
   private layers: Array<{ t: Phaser.GameObjects.TileSprite; vx: number }> = [];
@@ -24,36 +25,32 @@ export class TitleScene extends DCScene {
     }
     const planet = this.add.image(820, 120, 'space/prop-planet-big').setScale(2.4).setAlpha(0.9);
     this.tweens.add({ targets: planet, y: 132, x: 812, yoyo: true, repeat: -1, duration: 7000, ease: 'Sine.easeInOut' });
-    this.add.image(110, 440, 'space/cratered_moon_64').setScale(2).setAlpha(0.8);
+    this.add.image(880, 470, 'space/cratered_moon_64').setScale(2).setAlpha(0.8);
 
-    // logo
-    const glow = this.add.image(W / 2, 128, 'vfx/p_light_01').setScale(3.6, 1.1).setTint(CYAN).setBlendMode(ADD).setAlpha(0.35);
-    this.tweens.add({ targets: glow, alpha: 0.55, yoyo: true, repeat: -1, duration: 2200, ease: 'Sine.easeInOut' });
-    const probe = this.txt(0, 0, TITLE, 16, 'Pepper16-Bold'); const k = Math.max(1, Math.floor(820 / probe.width)); probe.destroy();
-    const logoGlow = this.txt(W / 2, 118, TITLE, 16, 'Pepper16-Bold', CYAN).setOrigin(0.5).setScale(k).setBlendMode(ADD).setAlpha(0.45);
-    this.txt(W / 2 + k, 118 + k, TITLE, 16, 'Pepper16-Bold', 0x0a1c2c).setOrigin(0.5).setScale(k);   // drop shadow
-    this.txt(W / 2, 118, TITLE, 16, 'Pepper16-Bold', 0xeafffe).setOrigin(0.5).setScale(k);
-    this.tweens.add({ targets: logoGlow, scale: k * 1.04, alpha: 0.2, yoyo: true, repeat: -1, duration: 2200, ease: 'Sine.easeInOut' });
-    this.txt(W / 2, 196, TAGLINE, 16, 'Aurora16-Smooth', 0xfff1c9).setOrigin(0.5);
+    // logo: yellow, with a few warmer additive copies behind it that pulse slowly (static with reduceMotion)
+    const YELLOW = 0xffd24a, WARM = 0xff9a1f;
+    const probe = this.txt(0, 0, TITLE, 16, 'Pepper16-Bold'); const k = Math.max(1, Math.floor(780 / probe.width)); probe.destroy();
+    const LY = 150, reduce = this.dc.settings.reduceMotion;
+    const logo = (tint: number) => noFit(this.txt(W / 2, LY, TITLE, 16, 'Pepper16-Bold', tint)).setOrigin(0.5).setScale(k);
+    [[1.05, 0.22], [1.1, 0.16], [1.0, 0.3]].forEach(([sc, a], i) => {
+      const g = logo(i === 2 ? 0xffb02e : WARM).setBlendMode(ADD).setAlpha(a).setScale(k * sc);
+      if (!reduce) this.tweens.add({ targets: g, alpha: a * 0.4, scale: k * (sc + 0.04), yoyo: true, repeat: -1, duration: 1800 + i * 500, ease: 'Sine.easeInOut' });
+    });
+    logo(YELLOW);
 
-    // anomaly between the brothers
-    const vx = this.add.sprite(W / 2, 330, 'vfx/vortex').setScale(1.1).setBlendMode(ADD).setTint(0xe8a0b4).setAlpha(0.5).play(flipAnim(this, 'vfx/vortex', 14, true));
-    void vx;
-    this.add.sprite(W / 2, 330, 'vfx/wavy_purple').setScale(0.9).setBlendMode(ADD).setAlpha(0.3).play(flipAnim(this, 'vfx/wavy_purple', 10, true));
-    const jen = myc(this, 'red', 250, 392, 4, 'E');
-    const sam = myc(this, 'blue', 710, 392, 4, 'W');
-    this.tweens.add({ targets: [jen, sam], y: '-=4', yoyo: true, repeat: -1, duration: 1400, ease: 'Sine.easeInOut' });
-
-    // buttons
-    const play = makeButton(this, W / 2 - 190, 458, 'PLAY', () => this.play(), { w: 230, size: 24 });
-    const relaxedBtn = makeButton(this, W / 2 + 130, 458, this.relaxedLabel(), () => {
+    // buttons: PLAY + RELAXED side by side, DEMO MODE centred below with the arrow note pointing at it
+    const play = makeButton(this, W / 2 - 190, 330, 'PLAY', () => this.play(), { w: 230, size: 24 });
+    const relaxedBtn = makeButton(this, W / 2 + 130, 330, this.relaxedLabel(), () => {
       this.dc.settings.relaxed = !this.dc.settings.relaxed;
       try { localStorage.setItem('oos-dc-settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('oos-dc-settings') || '{}'), relaxed: this.dc.settings.relaxed })); } catch { /* ignore */ }
       (relaxedBtn.list[1] as Phaser.GameObjects.BitmapText).setText(this.relaxedLabel());
       const dom = document.getElementById('dc-relaxed'); if (dom) dom.textContent = 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON (takes effect next run)' : 'OFF');
     }, { w: 330, size: 16 });
-    this.tweens.add({ targets: play, scale: 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.easeInOut' });
-    this.txt(W / 2, 516, 'Art: Kenney, Brackeys, Void Pixel, Nasha. CC0 / free packs.', 16).setOrigin(0.5).setAlpha(0.8);
+    if (!reduce) this.tweens.add({ targets: play, scale: 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.easeInOut' });
+    const DW = 300, DX = W / 2, DY = 435, left = DX - DW / 2;
+    makeButton(this, DX, DY, 'DEMO MODE', () => this.demo(), { w: DW, size: 20 });
+    boxText(this, 'Aurora16-Smooth', "for lazy people who can't solve puzzles", { x: 24, y: DY - 28, w: left - 24 - 90, h: 56 }, { max: 18, min: 11, align: 'right', valign: 'middle', tint: 0xffffff }, 'demo-note');
+    noFit(this.txt(left - 2, DY, '-->', 30, 'Aurora16-Smooth', 0xffffff)).setOrigin(1, 0.5);
 
     this.input.keyboard?.on('keydown-ENTER', () => this.play());
     this.input.keyboard?.on('keydown-SPACE', () => this.play());
@@ -61,5 +58,6 @@ export class TitleScene extends DCScene {
   }
   private relaxedLabel(): string { return 'RELAXED: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'); }
   private play(): void { if (this.started) return; this.started = true; this.dc.audio.playSfx('ui_confirm'); this.send({ type: 'START' }); }
+  private demo(): void { if (this.started) return; this.started = true; this.dc.audio.playSfx('ui_confirm'); this.send({ type: 'START_DEMO' }); }
   update(_t: number, dt: number): void { for (const l of this.layers) l.t.tilePositionX += (l.vx * dt) / 1000; }
 }

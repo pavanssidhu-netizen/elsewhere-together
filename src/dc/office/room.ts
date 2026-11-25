@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { DCScene } from '../base';
 import { CYAN, PINK, wizard } from './fx';
+import { boxText, noFit } from '../ui/fit';
 
 /** The Time Master's office: a cosy comic room with one hugely important desk. Everything is an imported sprite or tile. */
 
@@ -69,7 +70,7 @@ export function buildOffice(scene: DCScene): Room {
   };
   for (const x of [-170, -115, -60, 10, 80, 170]) mk(x, 0, CYAN, 0.1);
   for (const [x, y] of [[-26, -26], [44, 30], [114, -28], [-26, -26 + 0.01]] as const) mk(x, y, PINK, 0.075);
-  board.add(scene.add.bitmapText(0, -50, 'fonts/Pepper16-Bold', 'THE TIMELINE', 16).setOrigin(0.5).setTint(CYAN));
+  board.add(noFit(scene.add.bitmapText(0, -50, 'fonts/Pepper16-Bold', 'THE TIMELINE', 16).setOrigin(0.5).setTint(CYAN)));
   const pulse = scene.add.image(-170, 0, 'vfx/p_star_01').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.12);
   board.add(pulse);
   scene.tweens.add({ targets: pulse, x: 170, duration: 2600, repeat: -1, ease: 'Sine.easeInOut', yoyo: true });
@@ -88,7 +89,8 @@ export function buildOffice(scene: DCScene): Room {
   scene.add.image(dx + 128, deskTopY + 6, 'home/stack_of_books').setOrigin(0.5, 1).setScale(2.1).setDepth(8).setTint(0xfff3d8);
   scene.add.image(dx + 92, deskTopY + 8, 'home/coffee_mug').setOrigin(0.5, 1).setScale(1.4).setDepth(8);
   scene.add.image(dx + 70, deskTopY + 6, 'home/tiny_cuckoo_clock').setOrigin(0.5, 1).setScale(0.9).setDepth(8);
-  scene.add.bitmapText(dx, dBottom - 28, 'fonts/Pepper16-Bold', 'THE TIME MASTER', 16).setOrigin(0.5).setTint(0xffe9a8).setDepth(9);
+  const plateW = Math.min(desk.displayWidth * 0.6, 260);
+  boxText(scene, 'Pepper16-Bold', 'THE TIME MASTER', { x: dx - plateW / 2, y: dBottom - 40, w: plateW, h: 24 }, { max: 16, min: 9, align: 'center', valign: 'middle', tint: 0xffe9a8, depth: 9 }, 'desk-plate');
 
   let chaosTw: Phaser.Tweens.Tween | null = null;
   const room: Room = {

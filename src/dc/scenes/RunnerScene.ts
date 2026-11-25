@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import { DCScene } from '../base';
 import {
   RunnerSim, DT, LANES, ANCHORS_TO_WIN, MAX_HITS, distAt, type SimEvent, type Move, type Row,
+  perfectBot, type Bot,
 } from '../runner/runnerSim';
+import { boxText, noFit } from '../ui/fit';
+import { DemoPanel } from '../demo/demoPanel';
 
 // 'Stitch the Timeline': the player steers the Time Master's repair Thread through three lanes.
 // All rules live in the pure RunnerSim; this scene only feeds it input while `live` and draws what it reports.
@@ -14,12 +17,14 @@ const LANE_X = [346, 480, 614];
 const LANE_W = 128;
 const SWIPE_PX = 26;
 const BTN = 124;
+const BAR_X = 290, BAR_W = 290;
 const READY_SEC = 2.0;
 const INSTRUCTION = 'Steer the thread. Dodge the broken branches. Collect 3 anchors.';
 const RUNE_FRAMES = [3, 11, 19, 27, 35];
 
 const hazKey = (row: number, lane: number) => 1_000_000 + row * 4 + lane;
-type Phase = 'ready' | 'play' | 'ended';
+type Phase = 'demo' | 'ready' | 'play' | 'ended';
+type DemoMode = 'off' | 'win' | 'lose';
 interface RowVis { c: Phaser.GameObjects.Container; row: Row; idx: number; kind: 'hazard' | 'anchor'; lane: number }
 
 export class RunnerScene extends DCScene {
@@ -51,7 +56,11 @@ export class RunnerScene extends DCScene {
   private bar!: Phaser.GameObjects.Graphics;
   private healthPips: Phaser.GameObjects.Image[] = [];
   private anchorPips: Phaser.GameObjects.Image[] = [];
-  private instr!: Phaser.GameObjects.Container;
+  private instr: Phaser.GameObjects.GameObject[] = [];
+  private instrFaded = false;
+  private demoMode: DemoMode = 'off';
+  private bot: Bot | null = null;
+  private panel: DemoPanel | null = null;
   private bigText!: Phaser.GameObjects.BitmapText;
   private burst!: Phaser.GameObjects.Particles.ParticleEmitter;
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -61,7 +70,7 @@ export class RunnerScene extends DCScene {
 
   create(): void {
     // every restart builds a fresh scene state (the same Scene object is re-run by the flow)
-    this.phase = 'ready'; this.readyT = 0; this.lastCount = -1; this.pendingMove = 0; this.bgDist = 0; this.trailDist = 0;
+    this.phase = 'ready'; this.demoMode = 'off'; this.bot = null; this.panel?.destroy(); this.panel = null; this.instr = []; this.instrFaded = false; this.readyT = 0; this.lastCount = -1; this.pendingMove = 0; this.bgDist = 0; this.trailDist = 0;
     this.headX = LANE_X[1]; this.trail = []; this.vis = new Map(); this.spawnIdx = 0; this.flashT = 0; this.ended = false; this.exitAt = 0;
     this.swipeStartX = new Map(); this.swipeDir = new Map(); this.consumed = new Set(); this.bg = []; this.planets = []; this.healthPips = []; this.anchorPips = [];
 
@@ -85,13 +94,28 @@ export class RunnerScene extends DCScene {
     }).setDepth(40);
     this.flash = this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, MAGENTA, 0).setDepth(60);
 
-    this.bigText = this.txt(this.W / 2, 220, '', 64, 'Pepper16-Bold', 0xffffff).setOrigin(0.5).setDepth(70);
+    this.bigText = noFit(this.txt(this.W / 2, 220, '', 64, 'Pepper16-Bold', 0xffffff)).setOrigin(0.5).setDepth(70);
     this.fadeIn(300);
     this.dc.audio.playMusic('runner');
     this.dc.audio.setBondStress(0);
     this.bindInput();
     this.events.once('shutdown', () => this.cleanup());
     this.render(0);
+    if (this.snap?.demo) this.showDemoPanel();
+  }
+
+  private showDemoPanel(): void {
+    this.phase = 'demo';
+    const go = (m: DemoMode) => () => {
+      this.panel = null; this.demoMode = m;
+      if (m === 'win') this.bot = perfectBot(this.sim);
+      this.phase = 'ready'; this.readyT = 0; this.lastCount = -1;
+    };
+    this.panel = new DemoPanel(this, 'DEMO: STITCH THE TIMELINE', 'Choose how this one ends.', [
+      { label: 'MAKE IT WIN', run: go('win') },
+      { label: 'MAKE IT LOSE', run: go('lose') },
+      { label: 'PLAY IT MYSELF', run: go('off') },
+    ]);
   }
 
   // ---- setup ---------------------------------------------------------------------------------------------------
@@ -155,29 +179,30 @@ export class RunnerScene extends DCScene {
   private buildHud(): void {
     const D = 50;
     this.add.rectangle(this.W / 2, 34, this.W, 68, 0x050a1a, 0.7).setDepth(D - 1);
-    this.txt(20, 8, 'THREAD', 16, 'Aurora16-Smooth', CYAN).setDepth(D);
+    boxText(this, 'Aurora16-Smooth', 'THREAD', { x: 20, y: 8, w: 120, h: 20 }, { max: 16, min: 10, tint: CYAN, depth: D }, 'hud-thread');
     for (let i = 0; i < MAX_HITS; i++) {
       this.healthPips.push(this.add.image(34 + i * 40, 46, 'runner/Diamond').setScale(2.6).setTint(CYAN).setDepth(D));
     }
-    const lbl = this.txt(this.W - 104, 8, 'ANCHORS', 16, 'Aurora16-Smooth', 0xffe2a8).setDepth(D);
-    lbl.setOrigin(1, 0);
+    // keep the top-right 110 game px free for the SND / pause buttons
+    const right = this.W - 110;
+    boxText(this, 'Aurora16-Smooth', 'ANCHORS', { x: right - 150, y: 8, w: 150, h: 20 }, { max: 16, min: 10, align: 'right', tint: 0xffe2a8, depth: D }, 'hud-anchors');
     for (let i = 0; i < ANCHORS_TO_WIN; i++) {
-      const pip = this.add.image(this.W - 224 + i * 44 + 22, 46, 'portals/tide_rune_circle', 0).setScale(0.62).setAlpha(0.3).setDepth(D);
+      const pip = this.add.image(right - 132 + i * 44 + 22, 46, 'portals/tide_rune_circle', 0).setScale(0.62).setAlpha(0.3).setDepth(D);
       this.anchorPips.push(pip);
     }
-    this.txt(this.W / 2, 8, 'TIMELINE', 16, 'Aurora16-Smooth', 0xffffff).setOrigin(0.5, 0).setDepth(D);
+    boxText(this, 'Aurora16-Smooth', 'TIMELINE', { x: BAR_X, y: 8, w: BAR_W, h: 20 }, { max: 16, min: 10, align: 'center', tint: 0xffffff, depth: D }, 'hud-timeline');
     this.bar = this.add.graphics().setDepth(D);
     // instruction banner
-    const t = this.txt(0, 0, INSTRUCTION, 24, 'Aurora16-Smooth', 0xffffff).setOrigin(0.5).setCenterAlign().setMaxWidth(760);
-    const bg = this.add.rectangle(0, 0, 800, t.height + 22, 0x050a1a, 0.78).setStrokeStyle(2, CYAN, 0.8);
-    this.instr = this.add.container(this.W / 2, 128, [bg, t]).setDepth(D);
+    const bg = this.add.rectangle(this.W / 2, 128, 800, 70, 0x050a1a, 0.78).setStrokeStyle(2, CYAN, 0.8).setDepth(D);
+    const t = boxText(this, 'Aurora16-Smooth', INSTRUCTION, { x: 100, y: 98, w: 760, h: 60 }, { max: 24, min: 12, align: 'center', valign: 'middle', tint: 0xffffff, depth: D + 1 }, 'hud-instruction');
+    this.instr = [bg, t];
   }
 
   private buildTouch(): void {
     const mk = (x: number, dir: Move, label: string) => {
       const img = this.add.image(0, 0, 'ui/button-normal');
       img.setScale(BTN / img.width, BTN / img.width);
-      const t = this.add.bitmapText(0, -4, 'fonts/Pepper16-Bold', label, 64).setOrigin(0.5).setTint(0xfff1c9);
+      const t = noFit(this.add.bitmapText(0, -4, 'fonts/Pepper16-Bold', label, 64)).setOrigin(0.5).setTint(0xfff1c9);
       const c = this.add.container(x, this.H - BTN / 2 - 8, [img, t]).setSize(BTN, BTN).setDepth(55).setAlpha(0.85);
       c.setInteractive({ useHandCursor: true });
       c.on('pointerdown', (p: Phaser.Input.Pointer) => { this.consumed.add(p.id); img.setTexture('ui/button-pressed'); c.setScale(0.95); this.press(dir); });
@@ -213,12 +238,13 @@ export class RunnerScene extends DCScene {
   private cleanup(): void {
     if (this.keyHandler) this.input.keyboard?.off('keydown', this.keyHandler);
     this.input.off('pointerdown'); this.input.off('pointermove'); this.input.off('pointerup'); this.input.off('pointerupoutside');
+    this.panel?.destroy(); this.panel = null;
     this.tweens.killAll();
     this.vis.clear();
   }
 
   private press(dir: Move): void {
-    if (!this.live || this.phase !== 'play') return;
+    if (!this.live || this.phase !== 'play' || this.demoMode !== 'off') return;
     this.pendingMove = dir;
   }
 
@@ -226,13 +252,15 @@ export class RunnerScene extends DCScene {
   update(_t: number, delta: number): void {
     if (!this.live) return; // paused / cutscene: nothing moves, the sim clock is frozen
     const dt = Math.min(delta, 50) / 1000;
-    if (this.phase === 'ready') {
+    if (this.phase === 'demo') {
+      // waiting for the demo choice: backdrop keeps drifting, nothing else moves
+    } else if (this.phase === 'ready') {
       this.readyT += dt;
       const n = Math.min(3, Math.floor(this.readyT / (READY_SEC / 4)));
       if (n !== this.lastCount) { this.lastCount = n; this.countBeat(n); }
       if (this.readyT >= READY_SEC) { this.phase = 'play'; }
     } else if (this.phase === 'play') {
-      const mv = this.pendingMove; this.pendingMove = 0;
+      const mv = this.bot ? this.bot.move(this.sim) : this.pendingMove; this.pendingMove = 0;
       const evs = this.sim.step({ move: mv }, dt);
       for (const e of evs) this.onEvent(e);
     } else if (this.exitAt && this.time.now >= this.exitAt) { this.exitAt = 0; this.send({ type: this.sim.result.status === 'won' ? 'RUNNER_WON' : 'RUNNER_LOST' }); return; }
@@ -297,7 +325,7 @@ export class RunnerScene extends DCScene {
   }
 
   private floatText(x: number, y: number, s: string, tint: number): void {
-    const t = this.txt(Math.max(190, Math.min(this.W - 190, x)), y, s, 16, 'Aurora16-Smooth', tint).setOrigin(0.5).setDepth(65);
+    const t = noFit(this.txt(Math.max(190, Math.min(this.W - 190, x)), y, s, 16, 'Aurora16-Smooth', tint)).setOrigin(0.5).setDepth(65);
     this.tweens.add({ targets: t, y: y - 36, alpha: 0, duration: 900, delay: 250, onComplete: () => t.destroy() });
   }
 
@@ -366,7 +394,7 @@ export class RunnerScene extends DCScene {
 
     this.updateRows(st.dist + speed * this.sim.subTick * DT);
     this.drawBar(st.progress);
-    if (this.phase === 'play' && st.seconds > 4.2 && this.instr.alpha === 1) this.tweens.add({ targets: this.instr, alpha: 0, duration: 500 });
+    if (this.phase === 'play' && st.seconds > 4.2 && !this.instrFaded) { this.instrFaded = true; this.tweens.add({ targets: this.instr, alpha: 0, duration: 500 }); }
   }
 
   private updateRows(dist: number): void {
@@ -427,7 +455,7 @@ export class RunnerScene extends DCScene {
   }
 
   private drawBar(p: number): void {
-    const x0 = 320, w = 320, y = 30, h = 14;
+    const x0 = BAR_X, w = BAR_W, y = 30, h = 14;
     const b = this.bar; b.clear();
     b.fillStyle(0x0b1630, 0.9); b.fillRect(x0, y, w, h);
     b.fillStyle(CYAN, 1); b.fillRect(x0 + 2, y + 2, Math.max(0, (w - 4) * p), h - 4);

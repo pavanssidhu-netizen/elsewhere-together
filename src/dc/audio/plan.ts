@@ -102,7 +102,7 @@ export const lineFor = (id: string): Line | undefined => LINE_BY_ID[id];
 // ---------- Music synth score data ----------
 export type Inst =
   | 'pad' | 'glass' | 'pulse' | 'bass' | 'pluck' | 'flute' | 'celesta' | 'stac' | 'harpsi' | 'choir' | 'fanfare' | 'arp' | 'chipbass'
-  | 'kick' | 'tom' | 'hat' | 'snare' | 'timp';
+  | 'kick' | 'tom' | 'hat' | 'snare' | 'timp' | 'strings';
 export interface Note { beat: number; dur: number; midi: number; vel: number; inst: Inst; thin?: boolean }
 export interface TrackSpec { id: MusicId; bpm: number; beats: number; loop: boolean; level: number; notes: Note[] }
 
@@ -148,6 +148,7 @@ function forest(): TrackSpec {
 }
 
 function finalMinute(): TrackSpec {
+  // urgent: fast string ostinato (stac, 8ths), a kick on every beat + timpani, choir-like pad, sustained strings on top
   const n: Note[] = [];
   const roots = [50, 46, 43, 45]; // D Bb G A
   const choirs = [[62, 65, 69], [58, 62, 65], [55, 58, 62], [57, 61, 64]];
@@ -160,6 +161,8 @@ function finalMinute(): TrackSpec {
       if (i % 2 === 0) n.push({ beat: bar * 4 + i * 0.5, dur: 0.4, midi: r + 24 + off, vel: 0.28, inst: 'stac', thin: true });
     }
     chordAt(n, 'choir', bar * 4, 4.1, choirs[bar], 0.5);
+    chordAt(n, 'strings', bar * 4, 4.1, [r + 24, r + 24 + third], 0.3, true);
+    for (let b = 0; b < 4; b++) n.push({ beat: bar * 4 + b, dur: 0.2, midi: 36, vel: b === 0 ? 0.9 : 0.6, inst: 'kick' });
     n.push({ beat: bar * 4, dur: 1, midi: 38, vel: 1, inst: 'timp' });
     n.push({ beat: bar * 4 + 2, dur: 1, midi: 38, vel: 0.8, inst: 'timp' });
     n.push({ beat: bar * 4 + 3.5, dur: 0.5, midi: 43, vel: 0.6, inst: 'tom' });
@@ -216,8 +219,29 @@ function reunion(): TrackSpec {
   return { id: 'reunion', bpm: 84, beats: 16, loop: false, level: 1.3, notes: n };
 }
 
-// forest_tense (after the 1st failed room): placeholder = a darker, faster take on the forest score until the AUDIO agent writes its own
-const forestTense = (): TrackSpec => { const t = forest(); return { ...t, id: 'forest_tense', bpm: Math.round(t.bpm * 1.15), level: t.level }; };
+// forest_tense (after the 1st failed room): C-minor take on the forest tune, 124 bpm, timpani, tom pulse, rising strings. Darker and more dramatic than 'forest', slower than 'final_minute' (150).
+const MINOR: Record<number, number> = { 76: 75, 81: 80, 88: 87 }; // flatten the 3rd and 6th; keep the leading tone (B) for the cadence
+const TENSE_CHORDS: number[][] = [[60, 63, 67], [59, 62, 67], [60, 63, 67], [56, 60, 63], [53, 56, 60], [60, 63, 67], [53, 56, 60], [59, 62, 67]];
+const TENSE_ROOTS = [36, 31, 36, 32, 29, 36, 29, 31];
+function forestTense(): TrackSpec {
+  const n: Note[] = [];
+  const mel = FOREST_MEL.map(([m, d]): [number, number] => [MINOR[m] ?? m, d]);
+  N(n, 'pluck', 0, mel, 0.65);
+  N(n, 'strings', 16, mel.slice(18).map(([m, d]): [number, number] => [m > 0 ? m - 12 : 0, d]), 0.4);
+  for (let b = 0; b < 8; b++) {
+    chordAt(n, 'strings', b * 4, 4.05, TENSE_CHORDS[b], 0.3);
+    n.push({ beat: b * 4, dur: 1.9, midi: TENSE_ROOTS[b], vel: 0.85, inst: 'bass' });
+    n.push({ beat: b * 4 + 2, dur: 1.9, midi: TENSE_ROOTS[b], vel: 0.65, inst: 'bass' });
+    n.push({ beat: b * 4, dur: 1, midi: 36, vel: b % 4 === 3 ? 0.7 : 0.95, inst: 'timp' });
+    n.push({ beat: b * 4 + 2.5, dur: 1, midi: 36, vel: 0.6, inst: 'timp' });
+    n.push({ beat: b * 4 + 3.5, dur: 0.5, midi: 43, vel: 0.5, inst: 'tom' });
+    for (const o of [1, 3]) chordAt(n, 'stac', b * 4 + o, 0.3, TENSE_CHORDS[b], 0.26);
+    n.push({ beat: b * 4 + 1.5, dur: 2, midi: TENSE_CHORDS[b][1] + 24, vel: 0.2, inst: 'celesta', thin: true });
+  }
+  // rising strings through the last 8 beats (tension build into the loop point)
+  [60, 63, 67, 68, 70, 72, 75, 77].forEach((m, i) => n.push({ beat: 24 + i, dur: 1.1, midi: m + 12, vel: 0.3 + i * 0.04, inst: 'strings', thin: true }));
+  return { id: 'forest_tense', bpm: 124, beats: 32, loop: true, level: 1.3, notes: n };
+}
 const BUILDERS: Record<MusicId, () => TrackSpec> = { cosmic, forest, forest_tense: forestTense, final_minute: finalMinute, office, runner, reunion };
 export const trackSpec = (id: MusicId): TrackSpec => {
   const t = BUILDERS[id]();
@@ -248,3 +272,34 @@ export const SFX_DURATIONS: Record<SfxId, number> = {
 };
 
 export const MUSIC_DURATIONS_SEC: Record<MusicId, number> = { cosmic: 40, forest: 40, forest_tense: 40, final_minute: 30, office: 30, runner: 30, reunion: 20 };
+
+// ---------- Real-file manifest (assets/dc/audio/available.json) ----------
+export type FileKind = 'voice' | 'music' | 'sfx';
+export interface AudioManifest { voice: ReadonlySet<string>; music: ReadonlySet<string>; sfx: ReadonlySet<string> }
+export const EMPTY_MANIFEST: AudioManifest = { voice: new Set(), music: new Set(), sfx: new Set() };
+export const MANIFEST_URL = `${AUDIO_BASE}/available.json`;
+/** Lenient parse: anything that is not { voice, music, sfx: string[] } contributes nothing. Never throws. */
+export function parseManifest(raw: unknown): AudioManifest {
+  try {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!o || typeof o !== 'object') return EMPTY_MANIFEST;
+    const pick = (k: FileKind): Set<string> => {
+      const a = (o as Record<string, unknown>)[k];
+      return new Set(Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string' && /^[A-Za-z0-9_-]+$/.test(x)) : []);
+    };
+    return { voice: pick('voice'), music: pick('music'), sfx: pick('sfx') };
+  } catch { return EMPTY_MANIFEST; }
+}
+export const hasFile = (m: AudioManifest, kind: FileKind, id: string): boolean => m[kind].has(id);
+
+// ---------- Seamless file loops: equal-power overlap crossfade between passes ----------
+/** Crossfade length for a loop of `durSec`: 1.25 s, but never more than a quarter of the file. */
+export const loopCrossfadeSec = (durSec: number): number => clamp(Math.min(1.25, durSec / 4), 0, 1.25);
+/** Pass k starts at t0 + k*(dur - x): pass k's tail (last x s) overlaps pass k+1's head. */
+export const loopPassStart = (t0: number, k: number, durSec: number, x: number): number => t0 + k * (durSec - x);
+/** Equal-power gain curve of n points: fade-in = sin, fade-out = cos (sin^2 + cos^2 = 1 across the overlap). */
+export function equalPowerCurve(n: number, dir: 'in' | 'out', peak = 1): Float32Array {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i / (n - 1); c[i] = peak * (dir === 'in' ? Math.sin(x * Math.PI / 2) : Math.cos(x * Math.PI / 2)); }
+  return c;
+}

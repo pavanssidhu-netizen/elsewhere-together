@@ -125,6 +125,7 @@ console.log(manifest.length, 'files imported,', (bytes / 1e6).toFixed(1), 'MB');
 
 // ---- ADD:CUT1 (agent CUT-1 may add `await put(...)` lines here)
 // ---- ADD:CUT2 (agent CUT-2 may add `await put(...)` lines here)
+for (const f of ['barrel_of_pickles', 'bowl_of_cake_batter']) await put('nasha', `sprites/food/${f}.png`, `food/${f}.png`);
 for (const f of ['whistling_tea_kettle', 'tall_milk_churn', 'bread_bin', 'kitchen_counter_with_a_four_burner_stove_top', 'small_round_wooden_table']) await put('nasha', `sprites/kitchen/${f}.png`, `kitchen/${f}.png`);
 // ---- ADD:FOREST (agent FOREST may add `await put(...)` lines here)
 // ---- ADD:RUNNER (agent RUNNER may add `await put(...)` lines here)

@@ -86,6 +86,7 @@ export function playNote(ctx: Ctx, main: AudioNode, thin: AudioNode, n: Note, t:
     case 'fanfare': tone(ctx, dest, { t, dur: d, freq: f, type: 'sawtooth', spread: 6, lp: 900, lpTo: 2600, vib: [5, 4], env: { a: 0.025, r: 0.1, peak: 0.08 * v }, detuneCtl: dc }); break;
     case 'arp': tone(ctx, dest, { t, dur: d, freq: f, type: 'square', lp: 4500, env: { a: 0.003, r: 0.03, peak: 0.045 * v, pluck: true, decay: d }, detuneCtl: dc }); break;
     case 'chipbass': tone(ctx, dest, { t, dur: d, freq: f, type: 'square', lp: 900, env: { a: 0.004, r: 0.03, peak: 0.08 * v, pluck: true, decay: d }, detuneCtl: dc }); break;
+    case 'strings': tone(ctx, dest, { t, dur: d, freq: f, type: 'sawtooth', spread: 8, lp: 1800, lpTo: 2600, vib: [5.2, 8], env: { a: 0.18, r: 0.2, peak: 0.05 * v }, detuneCtl: dc }); break;
     case 'kick': tone(ctx, dest, { t, dur: 0.18, freq: 130, to: 42, env: { a: 0.002, r: 0.08, peak: 0.45 * v, pluck: true, decay: 0.16 } }); break;
     case 'timp': tone(ctx, dest, { t, dur: 0.6, freq: f * 1.6, to: f, env: { a: 0.003, r: 0.3, peak: 0.5 * v, pluck: true, decay: 0.55 } }); noise(ctx, dest, t, 0.08, 0.1 * v, 'lowpass', 600); break;
     case 'tom': tone(ctx, dest, { t, dur: 0.3, freq: f * 2, to: f, env: { a: 0.002, r: 0.1, peak: 0.3 * v, pluck: true, decay: 0.28 } }); break;
@@ -154,6 +155,7 @@ export function playSfxSynth(ctx: Ctx, dest: AudioNode, id: SfxId): void {
     case 'thread_snap': T({ freq: 420, to: 180, type: 'triangle', dur: 0.5, partials: [[2.4, 0.4], [3.9, 0.2]], vib: [45, 60], env: { a: 0.002, r: 0.2, peak: 0.2, pluck: true, decay: 0.5 } }); noise(ctx, dest, t, 0.03, 0.2, 'highpass', 3000); break;
     case 'cosmic_boom': T({ freq: 90, to: 28, dur: 1.8, env: { a: 0.01, r: 0.3, peak: 0.6, pluck: true, decay: 1.8 } }); noise(ctx, dest, t, 1.5, 0.3, 'lowpass', 800, 60); break;
     case 'reunion_chime': [[523, 0], [659, 0.05], [784, 0.1], [1047, 0.15]].forEach(([f, d]) => at(d, { freq: f, partials: [[2.76, 0.18], [4, 0.08]], dur: 2, env: { a: 0.006, r: 0.6, peak: 0.1, pluck: true, decay: 2.2 } })); break;
+    case 'fail_sting': T({ freq: 98, type: 'sawtooth', spread: 12, lp: 260, lpTo: 1500, dur: 1.0, env: { a: 0.55, r: 0.45, peak: 0.2 } }); at(0.05, { freq: 104, type: 'sawtooth', spread: 9, lp: 240, lpTo: 1200, dur: 0.95, env: { a: 0.55, r: 0.45, peak: 0.14 } }); at(0.55, { freq: 62, to: 38, dur: 0.9, env: { a: 0.01, r: 0.3, peak: 0.4, pluck: true, decay: 0.9 } }); noise(ctx, dest, t + 0.55, 1.0, 0.16, 'highpass', 6500, 4000); break;
     case 'pickup': T({ freq: 700, to: 1400, type: 'triangle', dur: 0.12, env: { a: 0.004, r: 0.1, peak: 0.14, pluck: true, decay: 0.2 } }); at(0.1, { freq: 1400, type: 'triangle', dur: 0.1, env: { a: 0.004, r: 0.12, peak: 0.1, pluck: true, decay: 0.15 } }); break;
     case 'fuel_burn': noise(ctx, dest, t, 0.8, 0.15, 'bandpass', 600, 1800, 0.8); T({ freq: 90, to: 140, type: 'sawtooth', lp: 400, dur: 0.8, env: { a: 0.1, r: 0.1, peak: 0.08 } }); break;
   }

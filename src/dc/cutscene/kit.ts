@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { DCScene } from '../base';
 import { LINE_BY_ID } from '../content/lines';
 import { mulberry32 } from '../../sim/rng';
+import { fitText, typeInto, noFit, type Box } from '../ui/fit';
 
 export const CYAN = 0x7be0df;
 export const PINK = 0xe8a0b4;
@@ -99,28 +100,82 @@ export function lerpTint(from: number, to: number, t: number): number {
 }
 
 // ---------- captions ---------------------------------------------------------------------------------------------------------
-/** Plain bottom caption (dark strip + bitmap text). Content comes from LINE_BY_ID so it always matches the voice file. */
+/**
+ * Bottom caption strip (dark strip + bitmap text). Content comes from LINE_BY_ID so it always matches the voice file. Text is wrapped and
+ * fitted into fixed boxes inside the strip (never beyond it). show(id) displays a line at once; ask(id) types it out (from the already
+ * wrapped string, so it never reflows), shows a blinking '>' when complete and resolves only when the player presses Enter / Space /
+ * clicks / taps (first press completes the typing, second press advances). Nothing here advances on a timer or on the voice ending.
+ */
 export class Caption {
+  /** Container at (0,0): every child sits in game coordinates, so `only(scene, caption.c, cams)` hides the whole strip on other cameras. */
   readonly c: Phaser.GameObjects.Container;
   private name: Phaser.GameObjects.BitmapText;
   private body: Phaser.GameObjects.BitmapText;
-  constructor(scene: DCScene, y = 478) {
-    const bg = scene.add.rectangle(0, 0, scene.W, 86, 0x04060d, 0.72);
-    const edge = scene.add.rectangle(0, -43, scene.W, 2, CYAN, 0.55);
-    this.name = scene.add.bitmapText(-440, -34, 'fonts/Pepper16-Bold', '', 16).setTint(CYAN);
-    this.body = scene.add.bitmapText(0, 6, 'fonts/Aurora16-Smooth', '', 24).setTint(0xfff1c9).setOrigin(0.5, 0).setCenterAlign().setMaxWidth(880);
-    this.c = scene.add.container(scene.W / 2, y, [bg, edge, this.name, this.body]).setDepth(1000).setVisible(false);
+  private prompt: Phaser.GameObjects.BitmapText;
+  private readonly nameBox: Box; private readonly bodyBox: Box;
+  private resolve: (() => void) | null = null;
+  private typing: Phaser.Time.TimerEvent | null = null;
+  private full = ''; private done = true; private dead = false; private keys: Phaser.Input.Keyboard.Key[] = [];
+  constructor(private scene: DCScene, y = 482) {
+    const W = scene.W, top = y - 48;
+    const bg = scene.add.rectangle(W / 2, y, W, 96, 0x04060d, 0.72);
+    const edge = scene.add.rectangle(W / 2, top, W, 2, CYAN, 0.55);
+    this.nameBox = { x: 40, y: top + 6, w: 400, h: 16 };
+    this.bodyBox = { x: 40, y: top + 26, w: 840, h: 66 };
+    this.name = scene.add.bitmapText(this.nameBox.x, this.nameBox.y, 'fonts/Pepper16-Bold', '', 16).setTint(CYAN);
+    this.body = scene.add.bitmapText(this.bodyBox.x, this.bodyBox.y, 'fonts/Aurora16-Smooth', '', 22).setTint(0xfff1c9);
+    this.prompt = noFit(scene.add.bitmapText(W - 44, y + 22, 'fonts/Aurora16-Smooth', '>', 22).setTint(CYAN).setVisible(false));
+    scene.tweens.add({ targets: this.prompt, alpha: 0.15, yoyo: true, repeat: -1, duration: 420 });
+    this.c = scene.add.container(0, 0, [bg, edge, this.name, this.body, this.prompt]).setDepth(1000).setVisible(false);
+    scene.input.on('pointerdown', this.advance, this);
+    const kb = scene.input.keyboard;
+    if (kb) for (const code of ['SPACE', 'ENTER']) { const k = kb.addKey(code); k.on('down', this.advance, this); this.keys.push(k); }
   }
+  private setName(who: string): string {
+    const label = who === 'TIME_MASTER' ? 'THE TIME MASTER' : who;
+    this.name.setTint(who === 'JENSEN' ? 0xff8a8a : who === 'SAM' ? 0x8ab4ff : CYAN);
+    fitText(this.name, label, this.nameBox, { max: 16, min: 11 }, 'caption-name');
+    return label;
+  }
+  /** Show a line instantly (no waiting). Returns the text length. */
   show(id: string): number {
     const l = LINE_BY_ID[id];
-    this.name.setText(l.who === 'TIME_MASTER' ? 'THE TIME MASTER' : l.who).setTint(l.who === 'JENSEN' ? 0xff8a8a : l.who === 'SAM' ? 0x8ab4ff : CYAN);
-    const long = l.text.length > 62;
-    this.body.setFontSize(long ? 20 : 24).setText(l.text).setY(long ? -14 : 6);
-    this.c.setVisible(true).setAlpha(0);
-    this.c.scene.tweens.add({ targets: this.c, alpha: 1, duration: 200 });
+    this.setName(l.who);
+    fitText(this.body, l.text, this.bodyBox, { max: l.text.length > 62 ? 20 : 24, min: 11 }, 'caption-body');
+    this.prompt.setVisible(false); this.c.setVisible(true).setAlpha(0);
+    this.scene.tweens.add({ targets: this.c, alpha: 1, duration: 200 });
     return l.text.length;
   }
+  /** Typewriter line that waits for the player. Plays the voice but never waits for it. */
+  ask(id: string): Promise<void> {
+    if (this.dead) return Promise.resolve();
+    const l = LINE_BY_ID[id];
+    this.setName(l.who);
+    this.full = fitText(this.body, l.text, this.bodyBox, { max: l.text.length > 62 ? 20 : 24, min: 11 }, 'caption-body');
+    this.body.setText(''); this.done = false; this.prompt.setVisible(false); this.c.setVisible(true).setAlpha(1);
+    this.scene.dc.audio.playVoice(id).catch(() => undefined);
+    return new Promise<void>((res) => {
+      this.resolve = res;
+      const speed = this.scene.dc.settings.reduceMotion ? 0 : 22;
+      this.typing = typeInto(this.scene, this.body, this.full, speed, () => this.complete());
+      if (!speed) this.complete();
+    });
+  }
+  private complete(): void { this.typing?.remove(); this.typing = null; this.body.setText(this.full); this.done = true; this.prompt.setVisible(true); }
+  private advance(): void {
+    if (this.dead || !this.resolve || !this.c.visible) return;
+    if (!this.done) { this.complete(); return; }
+    const r = this.resolve; this.resolve = null; this.prompt.setVisible(false); this.scene.dc.audio.skipVoice(); r();
+  }
+  /** Line currently shown fully typed and waiting for a press. */
+  get waiting(): boolean { return !!this.resolve && this.done; }
   hide(): void { this.c.setVisible(false); }
+  dispose(): void {
+    this.dead = true; this.typing?.remove(); this.typing = null;
+    this.scene.input.off('pointerdown', this.advance, this);
+    for (const k of this.keys) { k.off('down', this.advance, this); k.destroy(); }
+    this.keys = []; const r = this.resolve; this.resolve = null; r?.();
+  }
 }
 
 /** Pacing that works with real voice, synthesised voice and the silent stub alike. */

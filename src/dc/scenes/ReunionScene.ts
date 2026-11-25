@@ -5,6 +5,7 @@ import {
   CYAN, PINK, ADD, crispFonts, myc, setMyc, flip, flipAnim, buildForest, tintAll, lerpTint, Caption, holdFor, rngFor, type Forest,
 } from '../cutscene/kit';
 import { LINE_BY_ID } from '../content/lines';
+import { noFit } from '../ui/fit';
 
 /** FOREST_SUCCESS: the flames harmonise, the two worlds slide into one forest, the brothers run to each other. ~10 s, skippable. */
 export class ReunionScene extends DCScene {
@@ -42,7 +43,7 @@ export class ReunionScene extends DCScene {
     const mine = this.snap?.character === 'SAM' ? 'SAM' : 'JENSEN';
     const jen = myc(this, 'red', 140, 452, 4, 'S').setDepth(6), sam = myc(this, 'blue', 820, 452, 4, 'S').setDepth(6);
     this.me = mine === 'SAM' ? sam : jen;
-    this.youTag = this.txt(this.me.x, this.me.y - 190, 'YOU', 16, 'Pepper16-Bold', 0xfff1c9).setOrigin(0.5).setScale(1.2).setDepth(7);
+    this.youTag = noFit(this.txt(this.me.x, this.me.y - 190, 'YOU', 19, 'Pepper16-Bold', 0xfff1c9).setOrigin(0.5).setDepth(7));
     const cap = (this.caption = new Caption(this));
 
     const wait = (ms: number) => new Promise<void>((res) => { this.time.delayedCall(ms, () => res()); });

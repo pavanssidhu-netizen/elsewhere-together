@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DCScene } from '../base';
 import { DialogueBox } from '../ui/dialogue';
 import { makeButton } from '../ui/button';
+import { boxText, noFit } from '../ui/fit';
 import { forestBackdrop } from '../office/forest';
 import { mulberry32 } from '../../sim/rng';
 import { CYAN, MAGENTA, PINK, flash, flip, myconid, mycPlay, onShutdown, shake, tears, wait, wizard } from '../office/fx';
@@ -94,7 +95,7 @@ export class RunnerResultScene extends DCScene {
   }
 
   private cheerText(x: number, y: number, s: string, tint: number): void {
-    const t = this.txt(x, y, s, 32, 'Pepper16-Bold', tint).setOrigin(0.5).setDepth(2500);
+    const t = noFit(this.txt(x, y, s, 32, 'Pepper16-Bold', tint)).setOrigin(0.5).setDepth(2500);
     this.tweens.add({ targets: t, y: y - 30, alpha: 0, duration: 1400, delay: 400 });
   }
 
@@ -121,7 +122,7 @@ export class RunnerResultScene extends DCScene {
     const em = tears(this, 480, 330 - 7 * 11, 1.4);
     onShutdown(this, () => em.forEach(e => e.destroy()));
     if (!reduce) this.tweens.add({ targets: [wz, cush], x: { from: 474, to: 486 }, yoyo: true, repeat: -1, duration: 70 });
-    const sob = this.add.bitmapText(480, 235, 'fonts/Pepper16-Bold', 'waaah', 16).setOrigin(0.5).setTint(0x9fe8ff).setDepth(7).setAlpha(0.9);
+    const sob = this.add.bitmapText(480, 235, 'fonts/Pepper16-Bold', 'waaah', 16).setOrigin(0.5).setTint(0x9fe8ff).setDepth(7).setAlpha(0.9).setData('nofit', true);
     this.tweens.add({ targets: sob, y: 215, alpha: 0, yoyo: false, repeat: -1, duration: 1100 });
 
     // caption: his voice + text, top of the screen so the buttons stay clear
@@ -139,7 +140,7 @@ export class RunnerResultScene extends DCScene {
       if (e.key === ' ' || e.key === 'Enter' || e.key.toLowerCase() === 'r') this.go('RETRY');
       else if (e.key === 'Escape' || e.key.toLowerCase() === 'g') this.go('CONTINUE');
     });
-    this.add.bitmapText(this.W - 12, this.H - 10, 'fonts/Aurora16-Smooth', 'Space / Enter / R: retry', 16).setOrigin(1, 1).setTint(0x8fa0b8).setDepth(3000);
+    boxText(this, 'Aurora16-Smooth', 'Space / Enter / R: retry', { x: this.W - 332, y: this.H - 28, w: 320, h: 20 }, { max: 16, min: 10, align: 'right', tint: 0x8fa0b8, depth: 3000 }, 'retry-hint');
     void give;
 
     // timelines multiply faster and faster

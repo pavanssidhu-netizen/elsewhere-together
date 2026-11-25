@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DCScene } from '../base';
 import type { Character } from '../../flow/flow';
+import { boxText } from '../ui/fit';
 import { CYAN, PINK, ADD, crispFonts, myc, setMyc, flipAnim, buildForest, tintAll, type Forest } from '../cutscene/kit';
 
 interface Side { who: Character; color: 'red' | 'blue'; title: string; sub: string; perk: string; x0: number; tint: number; glow: number }
@@ -15,14 +16,14 @@ const SIDES: Side[] = [
 export class SelectScene extends DCScene {
   constructor() { super('SelectScene'); }
   private sel = -1; private done = false;
-  private items: Array<{ f: Forest; spr: Phaser.GameObjects.Sprite; hl: Phaser.GameObjects.Rectangle; plate: Phaser.GameObjects.Container; ring: Phaser.GameObjects.Image }> = [];
+  private items: Array<{ f: Forest; spr: Phaser.GameObjects.Sprite; hl: Phaser.GameObjects.Rectangle; plate: Phaser.GameObjects.Image; texts: Phaser.GameObjects.BitmapText[]; ring: Phaser.GameObjects.Image }> = [];
 
   create(): void {
     crispFonts(this);
     this.sel = -1; this.done = false; this.items = [];
     const { W, H } = this;
     this.cameras.main.setBackgroundColor(0x03040a); this.fadeIn(500);
-    this.dc.audio.playMusic('cosmic');
+    // music keeps whatever the intro started (the forest track); playMusic with the same id would be a no-op anyway
     this.add.tileSprite(0, 0, W, H, 'space/starfield_white_mid').setOrigin(0).setTileScale(1.6).setAlpha(0.8).setBlendMode(ADD);
 
     SIDES.forEach((s, i) => {
@@ -36,17 +37,19 @@ export class SelectScene extends DCScene {
       this.tweens.add({ targets: spr, y: '-=3', yoyo: true, repeat: -1, duration: 1300, ease: 'Sine.easeInOut' });
       const ring = this.add.image(cx, 350, 'vfx/p_circle_05').setScale(0.9, 0.3).setTint(s.glow).setBlendMode(ADD).setAlpha(0.0).setDepth(2);
       const hl = this.add.rectangle(s.x0, 0, w, H, 0xffffff, 0).setOrigin(0).setBlendMode(ADD).setDepth(3);
-      this.txt(cx, 46, s.sub, 16, 'Pepper16-Bold', s.glow).setOrigin(0.5).setScale(2).setDepth(5);
-      // name plate
-      const img = this.add.image(0, 0, 'ui/dialog-box'); const k = 440 / img.width; img.setScale(k);
-      const nm = this.txt(-158, -img.height * k / 2 + 30, s.title, 16, 'Pepper16-Bold', 0x4a1c0c).setScale(1.25);
-      const body = this.txt(-158, -img.height * k / 2 + 56, s.perk, 14, 'Aurora16-Smooth', 0x2a1608).setMaxWidth(326);
-      const plate = this.add.container(cx, 426, [img, nm, body]).setDepth(6);
+      const sub = boxText(this, 'Pepper16-Bold', s.sub, { x: s.x0 + 20, y: 44, w: w - 40, h: 34 }, { max: 32, min: 16, align: 'center', tint: s.glow, depth: 5 }, 'select-sub');
+      // name plate: texts live INSIDE the cream parchment (8% from the sides, 22-78% vertically)
+      const img = this.add.image(cx, 418, 'ui/dialog-box'); const k = 440 / img.width; img.setScale(k).setDepth(6);
+      const ph = img.height * k, pl = cx - 220, pt = 418 - ph / 2;
+      const inner = { x: pl + 0.08 * 440, w: 0.84 * 440, y: pt + 0.22 * ph, h: 0.56 * ph };
+      const nm = boxText(this, 'Pepper16-Bold', s.title, { x: inner.x, y: inner.y, w: inner.w, h: 24 }, { max: 22, min: 14, tint: 0x4a1c0c, depth: 7 }, 'select-name');
+      const body = boxText(this, 'Aurora16-Smooth', s.perk, { x: inner.x, y: inner.y + 28, w: inner.w, h: inner.h - 28 }, { max: 15, min: 10, tint: 0x2a1608, depth: 7 }, 'select-perk');
+      const plate = img;
       const zone = this.add.zone(s.x0, 0, w, H).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(10);
       zone.on('pointerover', () => this.focus(i));
       zone.on('pointerdown', () => this.focus(i));
       zone.on('pointerup', () => this.choose(i));
-      this.items.push({ f, spr, hl, plate, ring });
+      this.items.push({ f, spr, hl, plate, ring, texts: [sub, nm, body] });
     });
 
     // the pink tear, still shimmering between them
@@ -60,12 +63,11 @@ export class SelectScene extends DCScene {
 
     // header / footer
     const head = this.add.rectangle(mid, 20, W, 40, 0x03040a, 0.0).setDepth(4); void head;
-    this.txt(mid, 12, 'CHOOSE YOUR BROTHER', 16, 'Pepper16-Bold', 0xfff1c9).setOrigin(0.5).setDepth(11);
-    const foot = this.add.rectangle(mid, 516, W, 48, 0x03040a, 0.78).setDepth(11);
-    void foot;
-    this.txt(mid, 507, 'The one you do not pick replays as a ghost.', 16, 'Aurora16-Smooth', 0xfff1c9).setOrigin(0.5).setDepth(12);
-    this.txt(mid, 527, '<  >  choose      ENTER  confirm', 16, 'Aurora16-Smooth', 0x9fb0b0).setOrigin(0.5).setScale(0.8).setDepth(12);
-    this.txt(W - 14, 520, 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'), 16, 'Aurora16-Smooth', this.dc.settings.relaxed ? 0x9ff0a0 : 0x9fb0b0).setOrigin(1, 0.5).setDepth(12);
+    boxText(this, 'Pepper16-Bold', 'CHOOSE YOUR BROTHER', { x: 200, y: 10, w: 560, h: 22 }, { max: 20, min: 12, align: 'center', tint: 0xfff1c9, depth: 11 }, 'select-head');
+    this.add.rectangle(mid, 516, W, 48, 0x03040a, 0.78).setDepth(11);
+    boxText(this, 'Aurora16-Smooth', 'The one you do not pick replays as a ghost.', { x: 16, y: 494, w: 600, h: 20 }, { max: 16, min: 10, tint: 0xfff1c9, depth: 12 }, 'select-foot');
+    boxText(this, 'Aurora16-Smooth', '<  >  choose      ENTER  confirm', { x: 16, y: 516, w: 600, h: 18 }, { max: 14, min: 10, tint: 0x9fb0b0, depth: 12 }, 'select-hint');
+    boxText(this, 'Aurora16-Smooth', 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON' : 'OFF'), { x: 640, y: 504, w: 304, h: 20 }, { max: 16, min: 10, align: 'right', tint: this.dc.settings.relaxed ? 0x9ff0a0 : 0x9fb0b0, depth: 12 }, 'select-relaxed');
 
     const kb = this.input.keyboard;
     kb?.on('keydown-LEFT', () => this.focus(0)); kb?.on('keydown-A', () => this.focus(0));
@@ -83,7 +85,7 @@ export class SelectScene extends DCScene {
       const on = n === i;
       this.tweens.add({ targets: it.hl, fillAlpha: on ? 0.1 : 0, duration: 150 });
       this.tweens.add({ targets: it.ring, alpha: on ? 0.9 : 0.15, duration: 150 });
-      this.tweens.add({ targets: it.plate, scale: on ? 1.04 : 1, duration: 150 });
+      for (const t of it.texts) t.setAlpha(i < 0 || on ? 1 : 0.7);
       it.spr.setScale(on ? 5 : 4);
       it.plate.setAlpha(i < 0 || on ? 1 : 0.7);
     });

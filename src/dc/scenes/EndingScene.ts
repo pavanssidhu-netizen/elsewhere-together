@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
 import { DCScene } from '../base';
 import { makeButton } from '../ui/button';
+import { boxText } from '../ui/fit';
 import { Beacon } from '../shared/beacon';
 import { forestBackdrop } from '../office/forest';
 import { mulberry32 } from '../../sim/rng';
 import { CYAN, PINK, flip, myconid, mycPlay, onShutdown, tears, wizard } from '../office/fx';
 
 type Kind = 'FOREST_REUNION' | 'RUNNER_REPAIRED' | 'RUNNER_COLLAPSE';
-const mmss = (s: number) => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
 
 /** REUNION_ENDING / FINAL_ENDING (data.kind). Every ending offers replay. */
 export class EndingScene extends DCScene {
@@ -23,20 +23,20 @@ export class EndingScene extends DCScene {
     this.dc.audio.playMusic(kind === 'RUNNER_COLLAPSE' ? 'office' : 'reunion', { fadeMs: 900 });
     if (kind === 'RUNNER_COLLAPSE') this.collapseBackdrop(reduce); else this.brightBackdrop(kind, reduce);
 
-    // parchment card
-    const panel = this.add.image(this.W / 2, 150, 'ui/panel-frame').setScale(0.92, 0.72).setDepth(2000);
-    const mid = this.W / 2;
+    // parchment card: ui/panel-frame shown 880x294 at (480,170). Its parchment is ~14% in from the left/right, 22% from the top, 18% from the bottom.
+    const PW = 880, PH = 294, PX = this.W / 2 - PW / 2, PY = 170 - PH / 2;
+    this.add.image(this.W / 2, 170, 'ui/panel-frame').setDisplaySize(PW, PH).setDepth(2000);
+    const inner = { x: PX + 0.14 * PW, y: PY + 0.22 * PH, w: 0.72 * PW, h: 0.60 * PH };
     const title = { FOREST_REUNION: 'REUNITED', RUNNER_REPAIRED: 'TIME REPAIRED', RUNNER_COLLAPSE: 'TIME COLLAPSED' }[kind];
     const tag = { FOREST_REUNION: 'The brothers fixed it themselves.', RUNNER_REPAIRED: 'Entirely the Time Master\'s doing, apparently.', RUNNER_COLLAPSE: 'Everything is fine. Somewhere. Probably.' }[kind];
-    const t = this.add.bitmapText(mid, 70, 'fonts/Pepper16-Bold', title, 40).setOrigin(0.5).setTint(kind === 'RUNNER_COLLAPSE' ? 0x8a1030 : 0x4a1c0c).setDepth(2001);
-    if (t.width > 330) t.setScale(330 / t.width);
-    const tg = this.add.bitmapText(mid, 104, 'fonts/Aurora16-Smooth', tag, 16).setOrigin(0.5, 0).setTint(0x2a1608).setMaxWidth(400).setCenterAlign().setDepth(2001);
-    void panel;
+    boxText(this, 'Pepper16-Bold', title, { x: inner.x, y: inner.y, w: inner.w, h: 44 }, { max: 40, min: 20, align: 'center', valign: 'middle', tint: kind === 'RUNNER_COLLAPSE' ? 0x8a1030 : 0x4a1c0c, depth: 2001 }, 'ending-title');
+    boxText(this, 'Aurora16-Smooth', tag, { x: inner.x, y: inner.y + 48, w: inner.w, h: 24 }, { max: 18, min: 11, align: 'center', tint: 0x2a1608, depth: 2001 }, 'ending-tag');
 
     let lines: string[] = [];
     if (kind === 'FOREST_REUNION') {
       const f = this.dc.session.forestSummary;
-      if (f) lines = f.decisions.slice(0, 4).map(d => d.replace(/^Stage (\d) cleared as (\w+) first, (\d+) beats spare/, 'Room $1: $2 first, $3 spare'));
+      lines = f ? f.decisions.slice(0, 4) : [];
+      if (!lines.length) lines = ['Two brothers, one forest, and time politely put back.'];
     } else if (kind === 'RUNNER_REPAIRED') {
       const r = this.dc.session.runnerStats;
       lines = ['The mushrooms did the running.', 'He took the credit.'];
@@ -44,9 +44,9 @@ export class EndingScene extends DCScene {
     } else {
       lines = ['The Time Master cried loudly.', 'The mushrooms are in several pieces.'];
     }
-    let ly = tg.y + tg.height + 10;
-    for (const l of lines) { const lt = this.add.bitmapText(mid, ly, 'fonts/Aurora16-Smooth', l, 16).setOrigin(0.5, 0).setTint(0x3a2412).setMaxWidth(400).setCenterAlign().setDepth(2001); ly += lt.height + 5; }
+    boxText(this, 'Aurora16-Smooth', lines.join('\n'), { x: inner.x, y: inner.y + 78, w: inner.w, h: inner.h - 78 }, { max: 16, min: 10, align: 'center', tint: 0x3a2412, depth: 2001 }, 'ending-lines');
 
+    const mid = this.W / 2;
     // buttons
     const replay = () => { if (this.sent) return; this.sent = true; this.send({ type: 'REPLAY' }); };
     const btns: { label: string; act: () => void }[] = [{ label: 'PLAY AGAIN', act: replay }];
