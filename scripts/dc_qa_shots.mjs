@@ -5,7 +5,8 @@ const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PATH 
 const out = process.argv[2] || '/tmp/qa'; const [VW, VH] = (process.argv[3] || '1280x720').split('x').map(Number);
 fs.mkdirSync(out, { recursive: true });
 const root = path.resolve('dist'); const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.mp3': 'audio/mpeg', '.fnt': 'text/xml' };
-const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); }).listen(5233);
+const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); });
+const PORT = await new Promise(r => srv.listen(0, () => r(srv.address().port)));   // free port: parallel QA runs never collide
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/home/pavsidh/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell', args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const errs = [];
@@ -23,7 +24,7 @@ for (const [name, qs, times] of plan) {
   const ctx = await b.newContext({ viewport: { width: VW, height: VH }, hasTouch: VW < 700, isMobile: VW < 700 });
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(`${name}: PAGEERROR ${e.message}`)); p.on('console', m => { if (m.type() === 'error' && !/404|Failed to load resource/.test(m.text())) errs.push(`${name}: ${m.text().slice(0, 200)}`); });
-  await p.goto(`http://localhost:5233/?${qs}`); let t0 = 0;
+  await p.goto(`http://localhost:${PORT}/?${qs}`); let t0 = 0;
   for (const t of times) { await sleep(t - t0); t0 = t; await p.screenshot({ path: `${out}/${name}-${String(t / 1000)}s.png` }); }
   if (name === 'title') await p.mouse.click(VW / 2, VH * 0.62);
   const st = await p.evaluate(() => window.__dc?.flow.state).catch(() => '?'); console.log(name.padEnd(12), 'flow:', st);

@@ -3,13 +3,14 @@ import http from 'node:http'; import fs from 'node:fs'; import path from 'node:p
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PATH || '/home/pavsidh/.npm/_npx/e41f203b7505f1fb/node_modules/playwright');
 const out = process.argv[2] || '/tmp/qaf'; fs.mkdirSync(out, { recursive: true });
 const root = path.resolve('dist'); const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.mp3': 'audio/mpeg', '.fnt': 'text/xml' };
-const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); }).listen(5236);
+const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); });
+const PORT = await new Promise(r => srv.listen(0, () => r(srv.address().port)));   // free port: parallel QA runs never collide
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/home/pavsidh/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell' });
 const errs = []; const log = (...a) => console.log(...a);
 async function open(qs) { const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } }); const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404|Failed to load/.test(m.text())) errs.push(m.text().slice(0, 160)); });
-  await p.goto(`http://localhost:5236/?${qs}`); await sleep(1800); return p; }
+  await p.goto(`http://localhost:${PORT}/?${qs}`); await sleep(1800); return p; }
 const state = p => p.evaluate(() => window.__dc.flow.state);
 async function waitFor(p, want, ms = 30000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { const s = await state(p); if (s === want || (Array.isArray(want) && want.includes(s))) return s; await sleep(250); } return 'TIMEOUT@' + await state(p); }
 const key = i => i.t === 'MOVE' ? { N: 'ArrowUp', S: 'ArrowDown', E: 'ArrowRight', W: 'ArrowLeft' }[i.dir] : i.t === 'A' ? 'z' : i.t === 'B' ? 'x' : 'Enter';

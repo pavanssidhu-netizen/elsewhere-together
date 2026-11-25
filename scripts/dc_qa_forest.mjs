@@ -4,14 +4,15 @@ const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PATH 
 const out = process.argv[2] || '/tmp/qaf'; const char = process.argv[3] || 'SAM'; const room = Number(process.argv[4] || 1);
 fs.mkdirSync(out, { recursive: true });
 const root = path.resolve('dist'); const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.mp3': 'audio/mpeg', '.fnt': 'text/xml' };
-const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); }).listen(5234);
+const srv = http.createServer((q, r) => { let p = path.join(root, decodeURIComponent(q.url.split('?')[0])); if (p.endsWith('/')) p += 'index.html'; fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': T[path.extname(p)] || 'application/octet-stream' }); r.end(d); } }); });
+const PORT = await new Promise(r => srv.listen(0, () => r(srv.address().port)));   // free port: parallel QA runs never collide
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/home/pavsidh/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell' });
 const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
 const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404|Failed to load/.test(m.text())) errs.push(m.text().slice(0, 160)); });
 const shot = async n => { await p.screenshot({ path: `${out}/${n}.png` }); };
 const order = char === 'SAM' ? 'PAST_FIRST' : 'FUTURE_FIRST';
-await p.goto(`http://localhost:5234/?jump=FOREST_GAME&char=${char}&seed=3&f2debug=1`); await sleep(2500);
+await p.goto(`http://localhost:${PORT}/?jump=FOREST_GAME&char=${char}&seed=3&f2debug=1`); await sleep(2500);
 await shot('01-card'); await p.keyboard.press('Enter'); await sleep(700); await shot('02-chooser');
 // choose by clicking the left/right button
 await p.mouse.click(order === 'PAST_FIRST' ? 367 : 913, 544); await sleep(1500); await shot('03-phase1-start');
