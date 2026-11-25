@@ -111,11 +111,23 @@ def describe(it):
 
 
 def read_key(key_file):
-    key = os.environ.get("ELEVENLABS_API_KEY", "")
-    if not key and key_file:
-        with open(key_file, "r") as fh:
-            key = fh.read()
-    return key.strip()
+    """Key source order: env ELEVENLABS_API_KEY, then --key-file, then ./.env.local. Accepts a bare key or an ELEVENLABS_API_KEY=... line. Never printed."""
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    for path in ([key_file] if key_file else []) + [".env.local"]:
+        if key or not path or not os.path.isfile(path):
+            continue
+        with open(path, "r") as fh:
+            for line in fh.read().splitlines():
+                line = line.strip()
+                if line.startswith("#") or not line:
+                    continue
+                if "=" in line and line.split("=", 1)[0].strip() == "ELEVENLABS_API_KEY":
+                    key = line.split("=", 1)[1].strip().strip("'\"")
+                elif "=" not in line:
+                    key = line
+                if key:
+                    break
+    return key
 
 
 def post(path, key, body, query=""):
