@@ -10,6 +10,11 @@ import { Cards } from '../forest2/view/cards';
 import { Beacon } from '../shared/beacon';
 import type { RunPort } from '../forest2/view/runPort';
 import { createRunPort } from '../forest2/view/runAdapter';
+import { referenceSolution } from '../forest2/solutions';
+import type { ForestRun } from '../forest2/run';
+import { DemoPanel } from '../demo/demoPanel';
+import { fitText, noFit } from '../ui/fit';
+import { hash32 } from '../../sim/rng';
 
 const GOLD = 0xffc850, CYAN = 0x7be0df;
 const SFX: Record<SfxHint, SfxId> = {
@@ -18,6 +23,10 @@ const SFX: Record<SfxHint, SfxId> = {
 };
 const KEY_DIR: Record<string, Dir> = { ArrowUp: 'N', KeyW: 'N', ArrowDown: 'S', KeyS: 'S', ArrowLeft: 'W', KeyA: 'W', ArrowRight: 'E', KeyD: 'E' };
 type Mode = 'CARD' | 'PLAY' | 'LOCK' | 'DONE';
+/** world saturation after 0 / 1 / 2+ failed room attempts, bond stress and music per failure count */
+const SAT = [1, 0.55, 0.2], STRESS = [0.1, 0.4, 0.7], GREY_MS = 1200, JAB_GAP_MS = 8000;
+const CAP_BOX = { x: 250, y: 50, w: 460, h: 40 };
+interface Auto { mode: 'win' | 'lose'; q: Input[]; hold: number }
 const DISP = (l: Layer): string => (l === 'PAST' ? 'SAM' : 'JENSEN');
 const ROLE = (l: Layer): string => (l === 'PAST' ? 'THE BUILDER' : 'THE SCOUT');
 const TIPS = [
@@ -61,6 +70,24 @@ export class ForestScene extends DCScene {
   private beaconTile: Pt = { x: 3, y: 3 };
   private builtFor = '';
   private t = 0;
+  private uiCam!: Phaser.Cameras.Scene2D.Camera;
+  private uiBuild = 0;
+  private sat = 1;
+  private satTween?: Phaser.Tweens.Tween;
+  private cm?: { reset(): unknown; saturate(v: number): unknown };
+  private fails = 0;
+  private attemptNo = 0;
+  private lastLine = '';
+  private spoken: string[] = [];
+  private jabInputs = 0; private jabNext = 99; private jabCount = 0; private lastJabAt = -1e9;
+  private auto: Auto | null = null;
+  private autoEv?: Phaser.Time.TimerEvent;
+  private demo?: DemoPanel;
+  private onAdded = (go: Phaser.GameObjects.GameObject): void => {
+    // two cameras: the world (main, greyed by the colour matrix) and the UI (never greyed). Objects created inside ui() belong to the UI camera.
+    const g = go as unknown as { cameraFilter: number };
+    g.cameraFilter |= this.uiBuild > 0 ? this.cameras.main.id : this.uiCam.id;
+  };
   private timers: Phaser.Time.TimerEvent[] = [];
   private keyDown = (e: KeyboardEvent): void => this.onKeyDown(e);
   private keyUp = (e: KeyboardEvent): void => { if (e.code === 'KeyC') this.setPeek(false); };
@@ -68,7 +95,9 @@ export class ForestScene extends DCScene {
   constructor() { super('ForestScene'); }
 
   create(): void {
-    this.gone = false; this.mode = 'CARD'; this.said = new Set(); this.lowSaid = false; this.peeking = false; this.first = true;
+    this.gone = false; this.fails = 0; this.attemptNo = 0; this.lastLine = ''; this.spoken = []; this.jabInputs = 0; this.jabNext = 99; this.jabCount = 0; this.lastJabAt = -1e9;
+    this.auto = null; this.autoEv = undefined; this.demo = undefined; this.sat = 1; this.satTween = undefined; this.cm = undefined; this.uiBuild = 0;
+    this.mode = 'CARD'; this.said = new Set(); this.lowSaid = false; this.peeking = false; this.first = true;
     this.me = undefined; this.ghost = undefined; this.main = undefined; this.peekL = undefined; this.beacon = undefined; this.builtFor = ''; this.timers = [];
     const snap = this.snap;
     const ch = snap?.character ?? 'JENSEN';
@@ -77,19 +106,23 @@ export class ForestScene extends DCScene {
     this.touch = this.sys.game.device.input.touch || new URLSearchParams(location.search).get('touch') === '1';
     buildIsoTextures(this); ensureViewAnims(this);
     this.cameras.main.setBackgroundColor(0x0b1a10);
+    this.uiCam = this.cameras.add(0, 0, 960, 540);
+    this.events.on('addedtoscene', this.onAdded);
     this.backdrop = this.add.tileSprite(0, 0, 960, 540, 'tiles/front_lawn').setOrigin(0).setTileScale(2).setTint(0x2c4a2a).setDepth(-5000);
     this.haze = this.add.image(480, 250, 'vfx/p_light_01').setScale(2.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(-800).setAlpha(0.22);
     this.veinsMain = this.add.graphics().setDepth(-950);
     this.veinsPeek = this.add.graphics().setDepth(1950);
     this.pathG = this.add.graphics().setDepth(3300);
     this.tetherG = this.add.graphics().setDepth(5000);
-    this.cards = new Cards(this);
-    this.hud = new Hud(this, {
-      move: d => this.act({ t: 'MOVE', dir: d }), a: () => this.act({ t: 'A' }), b: () => this.act({ t: 'B' }),
-      peek: on => this.setPeek(on), endLoop: () => this.act({ t: 'END_LOOP' }), reset: () => this.doReset(),
-    }, this.touch);
-    this.capBg = this.add.rectangle(480, 50, 560, 30, 0x0b0d18, 0.7).setOrigin(0.5, 0).setDepth(20001).setVisible(false);
-    this.cap = this.txt(480, 54, '', 16, 'Aurora16-Smooth', 0xe9e2c8).setOrigin(0.5, 0).setCenterAlign().setDepth(20002).setVisible(false);
+    this.cards = new Cards(this, fn => this.ui(fn));
+    this.hud = this.ui(() => new Hud(this, {
+      move: d => this.pact({ t: 'MOVE', dir: d }), a: () => this.pact({ t: 'A' }), b: () => this.pact({ t: 'B' }),
+      peek: on => { if (!this.auto) this.setPeek(on); }, endLoop: () => this.pact({ t: 'END_LOOP' }), reset: () => { if (!this.auto) this.doReset(); },
+    }, this.touch));
+    this.ui(() => {
+      this.capBg = this.add.rectangle(CAP_BOX.x + CAP_BOX.w / 2, CAP_BOX.y + CAP_BOX.h / 2, CAP_BOX.w + 16, CAP_BOX.h + 4, 0x0b0d18, 0.72).setDepth(20001).setVisible(false);
+      this.cap = noFit(this.txt(480, 70, ' ', 16, 'Aurora16-Smooth', 0xe9e2c8)).setDepth(20002).setVisible(false);
+    });
     this.hud.setVisible(false);
 
     this.run = createRunPort(this.seed, ch, this.dc.settings.relaxed);
@@ -97,25 +130,31 @@ export class ForestScene extends DCScene {
     this.input.keyboard!.on('keyup', this.keyUp);
     this.events.once('shutdown', () => this.cleanup());
     this.events.once('destroy', () => this.cleanup());
-    (window as unknown as Record<string, unknown>).__forest2 = { stage: () => this.stage, run: () => this.run, scene: this, mode: () => this.mode };
+    (window as unknown as Record<string, unknown>).__forest2 = { stage: () => this.stage, run: () => this.run, scene: this, mode: () => this.mode, sat: () => this.sat, fails: () => this.fails, spoken: () => this.spoken.slice(), auto: () => !!this.auto };
     if (new URLSearchParams(location.search).has('f2debug')) {
       // test hook only: reference solutions for scripted playthroughs (separate tiny chunk, never loaded in normal play)
       void import('../forest2/solutions').then(m => { const h = (window as unknown as Record<string, Record<string, unknown>>).__forest2; if (h) h.solve = (room: 1 | 2 | 3, order: Order) => m.referenceSolution(room, order, (this.run.raw as { stageSeed: number }).stageSeed); });
     }
-    this.dc.audio.playMusic('forest'); this.dc.audio.setBondStress(0.1);
+    this.dc.audio.playMusic('forest'); this.dc.audio.setBondStress(STRESS[0]);
     this.fadeIn(350);
-    this.showIntroCard();
+    if (snap?.demo) this.showDemoPanel(); else this.showIntroCard();
   }
 
   private cleanup(): void {
     if (this.gone) return; this.gone = true;
     this.input.keyboard?.off('keydown', this.keyDown); this.input.keyboard?.off('keyup', this.keyUp);
+    this.events.off('addedtoscene', this.onAdded); this.autoEv?.remove(); this.autoEv = undefined; this.auto = null; this.satTween?.remove(); this.demo?.destroy(); this.demo = undefined;
     this.timers.forEach(t => t.remove()); this.timers = [];
     this.capTimer?.remove(); this.cards?.hide(); this.dc.audio.skipVoice(); this.dc.audio.setBondStress(0);
     this.tweens.killAll();
     const w = window as unknown as Record<string, unknown>; if (w.__forest2 && (w.__forest2 as { scene: unknown }).scene === this) delete w.__forest2;
   }
 
+  /** run fn so that everything it creates belongs to the UI camera (never greyed) */
+  private ui<T>(fn: () => T): T { this.uiBuild++; try { return fn(); } finally { this.uiBuild--; } }
+  /** a HUD/touch input from the player: ignored while the demo plays itself */
+  private pact(i: Input): void { if (!this.auto) this.act(i); }
+  private laterLive(ms: number, fn: () => void): void { this.later(ms, () => { if (this.live) fn(); else this.laterLive(300, fn); }); }
   private later(ms: number, fn: () => void): void { this.timers.push(this.time.delayedCall(ms, () => { if (!this.gone) fn(); })); }
 
   // ------------------------------------------------------------------ cards / flow
@@ -123,28 +162,89 @@ export class ForestScene extends DCScene {
     this.mode = 'CARD'; this.hud.setVisible(false); this.hideRoom();
     const r = this.run.room;
     this.cards.card({
-      title: r.name.toUpperCase(), sub: `ROOM ${this.run.roomIndex + 1} / 3`, subTint: GOLD, w: 600, h: 300,
-      body: [TIPS[this.run.roomIndex] ?? '', '', `${r.w}x${r.h} grid. ${r.budget} beats per loop.`],
-      buttons: [{ label: 'CONTINUE', fn: () => this.showChooser(false), primary: true }], autoMs: 3200,
+      title: r.name.toUpperCase(), sub: `ROOM ${this.run.roomIndex + 1} / 3`, subTint: GOLD, w: 640, h: 360,
+      body: [TIPS[this.run.roomIndex] ?? '', '', `${r.w}x${r.h} grid. ${r.budget} beats per loop.`, 'Keys: Z act, X act 2, hold C Peek.'],
+      buttons: [{ label: 'CONTINUE', fn: () => this.showChooser(false), primary: true }], autoMs: this.auto ? 2000 : 3200,
     });
   }
 
   private showChooser(retry: boolean): void {
     this.mode = 'CARD'; this.hud.setVisible(false);
-    this.cards.chooser(retry ? this.lastOrder : this.pickOrder, retry, o => this.startAttempt(o));
+    const pre = retry ? this.lastOrder : this.pickOrder;
+    this.cards.chooser(pre, retry, o => this.startAttempt(o));
+    if (this.auto) {   // demo: alternate the orders room by room, then confirm after a beat
+      const o: Order = retry ? this.lastOrder : this.run.roomIndex % 2 === 0 ? this.pickOrder : this.pickOrder === 'PAST_FIRST' ? 'FUTURE_FIRST' : 'PAST_FIRST';
+      this.laterLive(1600, () => { if (this.auto && this.cards.open) { this.cards.hide(); this.startAttempt(o); } });
+    }
+  }
+
+  // ------------------------------------------------------------------ demo mode
+  private showDemoPanel(): void {
+    this.mode = 'CARD'; this.hud.setVisible(false); this.hideRoom();
+    this.ui(() => {
+      this.demo = new DemoPanel(this, 'DEMO: TIME-LOCK ROOMS', 'Choose how this one ends.', [
+        { label: 'MAKE THEM WIN', run: () => this.startDemo('win') },
+        { label: 'MAKE THEM LOSE', run: () => this.startDemo('lose') },
+        { label: 'PLAY IT MYSELF', run: () => { this.demo = undefined; this.showIntroCard(); } },
+      ]);
+    });
+  }
+
+  private startDemo(mode: 'win' | 'lose'): void {
+    this.demo = undefined;
+    this.auto = { mode, q: [], hold: 0 };
+    this.autoEv = this.time.addEvent({ delay: 170, loop: true, callback: () => this.autoStep() });
+    this.showIntroCard();
+  }
+
+  /** feeds the next input through act(), the same handler the keys use, at ~170 ms per input */
+  private autoStep(): void {
+    const a = this.auto;
+    if (!a || this.gone || !this.live || this.mode !== 'PLAY') return;
+    if (a.hold > 0) { a.hold -= 170; return; }
+    const i = a.q.shift();
+    if (i) this.act(i);
+  }
+
+  private armAuto(): void {
+    if (!this.auto) return;
+    if (this.auto.mode === 'lose') { this.auto.q = [{ t: 'END_LOOP' }, { t: 'END_LOOP' }]; this.auto.hold = 3200; return; }
+    const run = this.run.raw as ForestRun;
+    const sol = referenceSolution(run.roomId, this.lastOrder, run.stageSeed);
+    this.auto.q = [...sol.phase1, ...sol.phase2]; this.auto.hold = 900;
   }
 
   private startAttempt(order: Order): void {
     this.lastOrder = order;
     this.stage = this.run.begin(order); this.v = this.stage.view();
-    this.said = new Set();
+    this.said = new Set(); this.attemptNo++;
     this.buildRoom();
     this.me = this.mkActor(this.v.role, false); this.ghost = undefined;
     this.me.place(this.v.me.pos.x, this.v.me.pos.y); this.me.face(this.v.me.facing);
     this.mode = 'PLAY'; this.hud.setVisible(true); this.setPeek(false);
     this.refresh(this.v, [], true);
+    this.armAuto();
+    this.jabInputs = 0; this.jabNext = this.nextJabN();
     if (this.first) { this.first = false; this.say('tm_start'); }
-    if (this.run.charges === 1 && !this.lowSaid) { this.lowSaid = true; this.say('tm_charge_low'); }
+    else this.tryJab();
+  }
+
+  // ------------------------------------------------------------------ Time Master jabs (only after a failure)
+  private nextJabN(): number {
+    const h = hash32(this.seed, 'jabN', this.attemptNo, this.jabCount);
+    return this.fails >= 2 ? 7 + (h % 5) : 14 + (h % 7);
+  }
+  private pickLine(prefix: string, salt: number): string {
+    let k = hash32(this.seed, prefix, salt) % 3;
+    if (`${prefix}_${k + 1}` === this.lastLine) k = (k + 1) % 3;
+    return `${prefix}_${k + 1}`;
+  }
+  /** true when a jab was spoken. Never before the first failure, never while a card is open, min 8 s of real time between jabs. */
+  private tryJab(): boolean {
+    if (this.fails < 1 || this.mode !== 'PLAY' || this.cards.open || performance.now() - this.lastJabAt < JAB_GAP_MS) return false;
+    this.lastJabAt = performance.now(); this.jabCount++;
+    this.say(this.pickLine(this.fails >= 2 ? 'tm_jab2' : 'tm_jab1', this.attemptNo * 31 + this.jabCount), 3000);
+    return true;
   }
 
   private mkActor(role: Layer, ghost: boolean): Actor { return new Actor(this, this.iso, role === 'PAST' ? 'blue' : 'red', ghost); }
@@ -180,6 +280,7 @@ export class ForestScene extends DCScene {
   // ------------------------------------------------------------------ input
   private onKeyDown(e: KeyboardEvent): void {
     if (this.gone) return;
+    if (this.auto) { e.preventDefault(); return; }   // the demo plays itself: real keys are ignored
     if (e.repeat) { if (e.code in KEY_DIR || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault(); return; }
     if (this.cards.key(e)) { e.preventDefault(); return; }
     if (this.mode !== 'PLAY' || !this.live) return;
@@ -211,6 +312,7 @@ export class ForestScene extends DCScene {
     this.said.delete('b5' + this.v.phase); this.said.delete('b2' + this.v.phase);
     this.dc.audio.playSfx('ui_click');
     this.refresh(this.v, [], true);
+    this.tryJab();
   }
 
   private act(i: Input): void {
@@ -220,6 +322,7 @@ export class ForestScene extends DCScene {
     const bumped = this.v.events.some(e => e.kind === 'BLOCKED');
     if (i.t === 'MOVE' && bumped) { this.me?.face(i.dir); this.me?.hit(); this.shake(2, 90); }
     this.refresh(this.v, this.v.events, false, prev);
+    if (this.fails >= 1 && this.mode === 'PLAY' && ++this.jabInputs >= this.jabNext && this.tryJab()) { this.jabInputs = 0; this.jabNext = this.nextJabN(); }
   }
 
   // ------------------------------------------------------------------ render
@@ -257,13 +360,11 @@ export class ForestScene extends DCScene {
     this.hud.update(v, info, this.peeking);
     // audio mood
     const left = v.budget - v.beat;
-    const final = this.run.charges === 1 || (v.phase === 2 && left <= 5 && v.status === 'PLAYING');
-    this.dc.audio.playMusic(final ? 'final_minute' : 'forest');
-    this.dc.audio.setBondStress(v.doomed ? 0.9 : v.tether?.strained ? 0.6 : 0.1);
+    this.dc.audio.setBondStress(Math.max(STRESS[Math.min(this.fails, 2)], v.doomed ? 0.9 : v.tether?.strained ? 0.6 : 0));
     // events -> fx / sfx / voice
     for (const e of evs) this.onEvent(e, v);
     if (v.status === 'PLAYING') {
-      if (left <= 5 && left > 2 && !this.said.has('b5' + v.phase) && v.beat > 0) { this.said.add('b5' + v.phase); this.say('tm_beats_5'); }
+      if (left <= 5 && left > 2 && !this.said.has('b5' + v.phase) && v.beat > 0) { this.said.add('b5' + v.phase); if (!this.tryJab()) this.say('tm_beats_5'); }
       if (left <= 2 && left > 0 && !this.said.has('b2' + v.phase)) { this.said.add('b2' + v.phase); this.said.add('b5' + v.phase); this.say('tm_beats_2'); }
     }
     void prev;
@@ -357,16 +458,33 @@ export class ForestScene extends DCScene {
   private shake(px: number, ms: number): void { if (!this.dc.settings.reduceMotion) this.cameras.main.shake(ms, px / 1000); }
   private toast(s: string): void { this.caption(s, 'sys'); }
 
-  private say(id: string): void {
+  private say(id: string, ms = 3800): void {
     const l = LINE_BY_ID[id]; if (!l) return;
+    this.lastLine = id; this.spoken.push(id);
     void this.dc.audio.playVoice(id);
-    this.caption(l.text, 'tm');
+    this.caption(l.text, 'tm', ms);
   }
-  private caption(text: string, kind: 'tm' | 'sys'): void {
-    this.cap.setText(text).setTint(kind === 'tm' ? 0xffe2a0 : 0xd7f6f5).setVisible(true).setMaxWidth(520);
-    this.capBg.setVisible(true).setSize(this.cap.width + 24, this.cap.height + 8);
+  private caption(text: string, kind: 'tm' | 'sys', ms?: number): void {
+    fitText(this.cap, text, CAP_BOX, { max: 16, min: 10, align: 'center', valign: 'middle' }, 'caption');
+    this.cap.setTint(kind === 'tm' ? 0xffe2a0 : 0xd7f6f5).setVisible(true);
+    const b = this.cap.getBounds();
+    this.capBg.setVisible(true).setSize(Math.max(120, b.width + 24), Math.max(26, b.height + 10)).setPosition(480, b.centerY);
     this.capTimer?.remove();
-    this.capTimer = this.time.delayedCall(kind === 'tm' ? 3800 : 2200, () => { this.cap.setVisible(false); this.capBg.setVisible(false); });
+    this.capTimer = this.time.delayedCall(ms ?? (kind === 'tm' ? 3800 : 2200), () => { this.cap.setVisible(false); this.capBg.setVisible(false); });
+  }
+
+  /** world saturation tween on the main camera's colour matrix (the UI camera is never touched) */
+  private setSat(target: number, instant: boolean): void {
+    const cam = this.cameras.main;
+    this.satTween?.remove(); this.satTween = undefined;
+    const apply = (v: number): void => {
+      this.sat = v;
+      if (!this.cm) { if (v >= 0.999 || !cam.postFX) return; this.cm = cam.postFX.addColorMatrix(); }
+      this.cm.reset(); this.cm.saturate(v - 1);
+    };
+    if (instant || this.dc.settings.reduceMotion || this.sat === target) { apply(target); return; }
+    const o = { v: this.sat };
+    this.satTween = this.tweens.add({ targets: o, v: target, duration: GREY_MS, ease: 'Sine.easeInOut', onUpdate: () => apply(o.v), onComplete: () => apply(target) });
   }
 
   // ------------------------------------------------------------------ Time-Lock
@@ -422,8 +540,8 @@ export class ForestScene extends DCScene {
     this.later(this.dc.settings.reduceMotion ? 300 : 1100, () => {
       this.mode = 'CARD'; this.hud.setVisible(false);
       this.cards.card({
-        title: 'ROOM CLEARED', titleTint: 0xffe08a, sub: v.room.name + '   ' + (v.order === 'PAST_FIRST' ? 'SAM FIRST' : 'JENSEN FIRST'), rows, body: star ? [star] : [], bodyTint: info.hasStar ? 0xffe08a : 0xbcd8d8, w: 620, h: 420,
-        buttons: [{ label: info.lastRoom ? 'FINISH THE RUN' : 'NEXT ROOM', primary: true, fn: () => this.afterClear(info.lastRoom) }],
+        title: 'ROOM CLEARED', titleTint: 0xffe08a, sub: v.room.name + '   ' + (v.order === 'PAST_FIRST' ? 'SAM FIRST' : 'JENSEN FIRST'), rows, body: star ? [star] : [], bodyTint: info.hasStar ? 0xffe08a : 0xbcd8d8, w: 680, h: 460,
+        buttons: [{ label: info.lastRoom ? 'FINISH THE RUN' : 'NEXT ROOM', primary: true, fn: () => this.afterClear(info.lastRoom) }], autoMs: this.auto ? 2000 : undefined,
       });
     });
   }
@@ -439,18 +557,28 @@ export class ForestScene extends DCScene {
     const v = this.v;
     this.run.failed(this.stage);
     const left = this.run.charges;
-    if (left === 1 && !this.lowSaid) { this.lowSaid = true; this.later(2600, () => this.say('tm_charge_low')); }
+    this.fails = this.run.maxCharges - left;
+    const lvl = Math.min(this.fails, 2);
+    // the world drains of colour and the music turns darker; both stay for the rest of the run
+    this.setSat(SAT[lvl], false);
+    this.dc.audio.playSfx('fail_sting');
+    if (this.fails === 1) this.dc.audio.playMusic('forest_tense', { fadeMs: 1500 });
+    else if (this.fails >= 2) this.dc.audio.playMusic('final_minute', { fadeMs: 1500 });
+    this.dc.audio.setBondStress(STRESS[lvl]);
+    const lost = this.run.result === 'LOST';
+    const quipId = lost ? '' : this.pickLine(lvl >= 2 ? 'tm_fail2' : 'tm_fail1', this.attemptNo);
     const hint = v.failReason === 'PARADOX'
       ? 'A Blueprint Pin is only a promise. Sam has to really build what Jensen assumed (coat the vine, make the bark) before Jensen walks it. Hold C to Peek at the ghost route.'
       : v.failReason === 'BUDGET' ? 'Out of beats. Hold C to Peek for a shorter route, and press END LOOP early when your job is done.'
       : 'Both shrooms must stand on their conduits on the same beat, with the root and charge sockets already lit. Peek at the ghost to time it.';
     this.later(this.dc.settings.reduceMotion ? 200 : 1000, () => {
       this.mode = 'CARD'; this.hud.setVisible(false);
-      if (this.run.result === 'LOST') { this.finalCard(false); return; }
+      if (lost) { this.finalCard(false); return; }
+      this.lastLine = quipId; this.spoken.push(quipId); void this.dc.audio.playVoice(quipId);
       this.cards.card({
-        title: v.failReason === 'PARADOX' ? 'PARADOX!' : 'LOOP FAILED', titleTint: 0xff8a7a, sub: v.failText ?? 'The loop did not close.', subTint: 0xffd8c8, w: 640, h: 380,
-        rows: [['Thread charges left', `${left} / ${this.run.maxCharges}`, left <= 1 ? 0xff8a7a : 0xfff1c9]], body: ['Why: ' + hint],
-        buttons: [{ label: 'RETRY ROOM', primary: true, fn: () => this.showChooser(true) }],
+        title: v.failReason === 'PARADOX' ? 'PARADOX!' : 'LOOP FAILED', titleTint: 0xff8a7a, sub: v.failText ?? 'The loop did not close.', subTint: 0xffd8c8, w: 700, h: 440,
+        rows: [['Thread charges left', `${left} / ${this.run.maxCharges}`, left <= 1 ? 0xff8a7a : 0xfff1c9]], body: ['Why: ' + hint], quote: `Time Master: "${LINE_BY_ID[quipId]?.text ?? ''}"`,
+        buttons: [{ label: 'RETRY ROOM', primary: true, fn: () => this.showChooser(true) }], autoMs: this.auto ? 3800 : undefined,
       });
     });
   }
@@ -461,11 +589,11 @@ export class ForestScene extends DCScene {
     const tint = { GOLD: 0xffd24a, SILVER: 0xd8e0e8, BRONZE: 0xd8883a, NONE: 0x8a8a8a }[medal];
     if (!won) this.say('tm_forest_fail');
     this.cards.card({
-      title: won ? 'THE THREAD HOLDS' : 'THE THREAD SNAPS', titleTint: won ? 0xffe08a : 0xff8a7a, w: 560, h: 380,
+      title: won ? 'THE THREAD HOLDS' : 'THE THREAD SNAPS', titleTint: won ? 0xffe08a : 0xff8a7a, w: 600, h: 420,
       sub: won ? 'All three rooms cleared.' : 'No Thread charges left.',
       icon: won && medal !== 'NONE' ? { key: 'runner/Diamond', tint, scale: 2.6 } : undefined,
       rows: [['Run score', String(this.run.total), 0xffffff], ['Medal', medal === 'NONE' ? 'none' : medal, tint]],
-      buttons: [{ label: 'CONTINUE', primary: true, fn: () => this.finish(won) }],
+      buttons: [{ label: 'CONTINUE', primary: true, fn: () => this.finish(won) }], autoMs: this.auto ? 3200 : undefined,
     });
   }
 
