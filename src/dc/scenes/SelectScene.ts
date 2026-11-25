@@ -41,7 +41,7 @@ export class SelectScene extends DCScene {
       // name plate: texts live INSIDE the cream parchment (8% from the sides, 22-78% vertically)
       const img = this.add.image(cx, 418, 'ui/dialog-box'); const k = 440 / img.width; img.setScale(k).setDepth(6);
       const ph = img.height * k, pl = cx - 220, pt = 418 - ph / 2;
-      const inner = { x: pl + 0.08 * 440, w: 0.84 * 440, y: pt + 0.22 * ph, h: 0.56 * ph };
+      const inner = { x: cx - 0.33 * 440, w: 0.66 * 440, y: pt + 0.22 * ph, h: 0.56 * ph };
       const nm = boxText(this, 'Pepper16-Bold', s.title, { x: inner.x, y: inner.y, w: inner.w, h: 24 }, { max: 22, min: 14, tint: 0x4a1c0c, depth: 7 }, 'select-name');
       const body = boxText(this, 'Aurora16-Smooth', s.perk, { x: inner.x, y: inner.y + 28, w: inner.w, h: inner.h - 28 }, { max: 15, min: 10, tint: 0x2a1608, depth: 7 }, 'select-perk');
       const plate = img;

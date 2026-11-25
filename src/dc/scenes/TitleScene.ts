@@ -39,13 +39,13 @@ export class TitleScene extends DCScene {
     logo(YELLOW);
 
     // buttons: PLAY + RELAXED side by side, DEMO MODE centred below with the arrow note pointing at it
-    const play = makeButton(this, W / 2 - 190, 330, 'PLAY', () => this.play(), { w: 230, size: 24 });
-    const relaxedBtn = makeButton(this, W / 2 + 130, 330, this.relaxedLabel(), () => {
+    const play = makeButton(this, W / 2 - 170, 330, 'PLAY', () => this.play(), { w: 300, size: 24 });
+    const relaxedBtn = makeButton(this, W / 2 + 170, 330, this.relaxedLabel(), () => {
       this.dc.settings.relaxed = !this.dc.settings.relaxed;
       try { localStorage.setItem('oos-dc-settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('oos-dc-settings') || '{}'), relaxed: this.dc.settings.relaxed })); } catch { /* ignore */ }
       (relaxedBtn.list[1] as Phaser.GameObjects.BitmapText).setText(this.relaxedLabel());
       const dom = document.getElementById('dc-relaxed'); if (dom) dom.textContent = 'RELAXED MODE: ' + (this.dc.settings.relaxed ? 'ON (takes effect next run)' : 'OFF');
-    }, { w: 330, size: 16 });
+    }, { w: 300, size: 16 });
     if (!reduce) this.tweens.add({ targets: play, scale: 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.easeInOut' });
     const DW = 300, DX = W / 2, DY = 435, left = DX - DW / 2;
     makeButton(this, DX, DY, 'DEMO MODE', () => this.demo(), { w: DW, size: 20 });
