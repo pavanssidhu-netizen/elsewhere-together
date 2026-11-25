@@ -32,7 +32,7 @@ None of these can tell you whether something looks good or sounds good. Open the
 
 ## Art pipeline (`scripts/assets/`)
 
-Source packs live in `asset_zips/` (git-ignored; licences forbid redistributing the raw files). To rebuild `public/assets/game`:
+Source packs live in `asset_zips/` and the imported art in `public/assets/game/` (both git-ignored; licences forbid redistributing the raw files, see `public/assets/game/README.md`). A fresh clone has no art until you run the importer. To rebuild `public/assets/game`:
 
 1. Extract the zips into a folder, one subfolder per zip.
 2. `node scripts/assets/import_assets.mjs <that folder>` copies only the files listed in the script, resizes oversized ones, converts fonts (`fnt_to_xml.mjs`), and rewrites `public/assets/game/manifest.json` and `src/game/assets.generated.ts`.
@@ -53,4 +53,4 @@ See `docs/audio.md`.
 ## Secrets and licences
 
 - `api_keys/`, `.env`, `.env.local` are git-ignored. The ElevenLabs key must never be committed. Before pushing, run: `grep -rIl "sk_" src scripts docs public README.md`.
-- `ASSET_CREDITS.md` lists every pack and its licence. Several packs forbid redistributing the raw files and AI training use, so keep the GitHub repository private unless those terms are cleared.
+- `public/assets/game/README.md` lists every pack and its licence. Several packs forbid redistributing the raw files and AI training use, so keep the GitHub repository private unless those terms are cleared.

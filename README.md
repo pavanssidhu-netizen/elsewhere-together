@@ -49,7 +49,7 @@ Phones: landscape is best (a rotate prompt appears in portrait). Relaxed mode (t
 | know the exact puzzle rules | [docs/forest-rules.md](docs/forest-rules.md) |
 | change voices, music or regenerate audio | [docs/audio.md](docs/audio.md) |
 | run tests, QA scripts, the art pipeline | [docs/development.md](docs/development.md) |
-| check asset licences | [ASSET_CREDITS.md](ASSET_CREDITS.md) |
+| check asset licences | [public/assets/game/README.md](public/assets/game/README.md) |
 
 ## Repo layout
 
@@ -60,4 +60,4 @@ public/assets/game (art, fonts, audio)        scripts/{assets,audio,qa}         
 
 ## Licences
 
-Code is the project's own. Art and fonts come from third-party packs with their own licences, several of which forbid redistributing the raw files and AI training use. See [ASSET_CREDITS.md](ASSET_CREDITS.md).
+Code is the project's own. Art and fonts come from third-party packs with their own licences, several of which forbid redistributing the raw files and AI training use. See [public/assets/game/README.md](public/assets/game/README.md).
