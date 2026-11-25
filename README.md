@@ -1,51 +1,63 @@
-# OUT OF SYNC (Director's Cut)
+# OUT OF SYNC
 
 > Two mushrooms broke time. Now somebody has to put it back.
 
-A small, funny, replayable browser game. Jensen (future) and Sam (past) touched an ancient beacon and split reality. The Time Master (a very serious voice who turns out to be very small) gives them a few dozen heartbeats to fix it.
+A small, funny, replayable browser game. Jensen (future) and Sam (past) touch an ancient beacon and split reality. The Time Master (a deep, commanding British voice that turns out to belong to someone very small) gives them a few dozen heartbeats to fix it.
 
-Phaser 3 + TypeScript + Vite. Static build, no server, no network needed at runtime.
+Phaser 3 + TypeScript + Vite. Static build, no server, no network at runtime. Fully voiced and scored (ElevenLabs).
 
 ## Run it
+
 ```
 npm install --registry https://registry.npmjs.org/
-npm run dev          # local dev server
-npm run build        # static site in dist/ (index.html at the root, relative paths)
-npm test             # 96 unit tests (flow, forest sim, audio plan, runner)
+npm run dev        # local dev server
+npm run build      # static site in dist/ (relative paths, host anywhere)
+npm test           # unit tests
 ```
-Deploy `dist/` to any static host. `classic.html` is the earlier prototype (kept as a bonus).
 
 ## The game
-1. **Title -> cosmic intro -> choose your brother.** Every cutscene is skippable.
-2. **Game 1, Time-Lock Rooms (3 isometric rooms, turn based).** Each room: pick who goes first (Sam = the PAST Builder, Jensen = the FUTURE Scout). You get 20 beats. Your recording then locks and you play the other brother while the first replays as a translucent Spore Ghost. Both must stand on their beacon conduits on the same beat.
-   - Sam (Past): plant roots on soil, pulse to grow vine bridges over gaps, coat vines in mineral sap so they survive into the future (uncoated vines turn to dust).
-   - Jensen (Future): absorb static charge from ruins, discharge it into conduit plates, drop Blueprint Pins (promises for Sam to keep), push crates into Time Rifts to send tools back.
-   - Tether: stay within 4 tiles of your twin or moves cost 2 beats; end a beat next to it for a Sync Boost (multiplier, refunds a beat).
-   - 3 Thread charges per run (5 in relaxed mode). Clear all three rooms to reunite without the Time Master.
-3. **Fail -> abduction -> the Time Master's office.** Beg ("Please, magnificent Time Master.") or refuse ("Absolutely not." leads to the soup ending).
-4. **Game 2, Stitch the Timeline (3-lane runner).** Steer the repair thread, dodge magenta broken branches (3 hits = fail), collect 3 anchors. Instant retry on failure.
-5. Four endings (forest reunion, soup, time repaired, time collapsed). All offer replay.
+
+1. **Title** -> narrated cosmic intro (press to advance) -> choose your brother. **DEMO MODE** on the title plays the game for you and lets you pick win or lose at each game, to explore the branches.
+2. **Game 1, Time-Lock Rooms** (3 isometric rooms, turn based). Per room, pick who goes first: Sam is the PAST Builder, Jensen is the FUTURE Scout. You get 20 beats. Your recording then locks and you play the other brother while the first replays as a translucent Spore Ghost. Both must stand on their beacon conduits on the same beat.
+   - Sam (past): plant roots, pulse to grow vine bridges over gaps, coat vines in mineral sap so they survive into the future.
+   - Jensen (future): absorb static charge from ruins, discharge it into conduit plates, drop Blueprint Pins, push crates into Time Rifts.
+   - Tether: stay within 4 tiles of your twin or moves cost 2 beats.
+   - 3 Thread charges per run (5 in relaxed mode). Every failed room greys the world a bit more, the music gets more dramatic, and the Time Master gets meaner.
+3. **Fail -> abduction -> the Time Master's office.** Beg ("Please, magnificent Time Master.") or refuse ("Absolutely not.", which leads to the soup ending).
+4. **Game 2, Stitch the Timeline** (3-lane runner). Dodge broken branches (3 hits = fail), collect 3 anchors.
+5. Four endings: forest reunion, soup, time repaired, time collapsed. All offer replay.
 
 ## Controls
+
 | | Keyboard | Touch |
 |---|---|---|
 | Game 1 move | Arrows / WASD | on-screen d-pad |
-| Game 1 A / B | Z or Space / X | A / B buttons |
+| Game 1 actions | Z (or Space) / X | Z / X buttons |
 | Peek (hold) | C | C button |
-| Reset phase / End loop | R / Enter | small buttons |
+| Reset phase / End loop | R / Enter | on-screen buttons |
 | Runner | Left/Right or A/D | swipe or two big buttons |
 | Pause | Esc | pause button |
 | Dialogue | Enter / Space / click | tap |
 
 Phones: landscape is best (a rotate prompt appears in portrait). Relaxed mode (title screen) gives longer loops and more charges.
 
-## Debug and testing
-- `?jump=<STATE>&char=SAM|JENSEN&seed=N` starts at any flow state (`FOREST_GAME`, `TIME_MASTER_OFFICE`, `THREAD_RUNNER`, `FINAL_ENDING`, ...).
-- `?f2debug=1` adds `window.__forest2.solve(room, order)` (the reference solutions).
-- `node scripts/dc_qa_shots.mjs` screenshots every scene. `node scripts/dc_qa_forest.mjs` and `node scripts/dc_qa_fullrun.mjs` drive the real UI with real key presses through every branch.
+## Where to read next
 
-## Audio
-All sound is currently **synthesised in the browser** (music, voices, effects). ElevenLabs audio is **not generated yet**: it needs a valid secret key and the creative director's approval of samples. `python3 scripts/generate_dc_audio.py` is a dry run by default (prints the plan and credit estimate, no network call). See `docs/DC_AUDIO.md`. Any mp3 placed under `public/assets/dc/audio/{voice,music,sfx}/<id>.mp3` is picked up automatically.
+| If you want to... | Read |
+|---|---|
+| understand the code layout and story flow | [docs/architecture.md](docs/architecture.md) |
+| know the exact puzzle rules | [docs/forest-rules.md](docs/forest-rules.md) |
+| change voices, music or regenerate audio | [docs/audio.md](docs/audio.md) |
+| run tests, QA scripts, the art pipeline | [docs/development.md](docs/development.md) |
+| check asset licences | [ASSET_CREDITS.md](ASSET_CREDITS.md) |
 
-## Credits and licences
-See `ASSET_CREDITS.md`. Several packs forbid redistributing the raw files as assets; the files in `public/assets/dc` ship only as part of this game, and the original zips are git-ignored.
+## Repo layout
+
+```
+index.html   src/flow (story state machine)   src/game (scenes, puzzle, audio, UI)   src/shared (seeded RNG)
+public/assets/game (art, fonts, audio)        scripts/{assets,audio,qa}                docs/
+```
+
+## Licences
+
+Code is the project's own. Art and fonts come from third-party packs with their own licences, several of which forbid redistributing the raw files and AI training use. See [ASSET_CREDITS.md](ASSET_CREDITS.md).

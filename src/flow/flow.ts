@@ -1,6 +1,6 @@
 // Director's Cut: central, pure flow controller. No Phaser, no DOM, no wall clock.
 // Scenes ask it what state we are in; it owns routing, seeds, pause and the "may timers run?" rule.
-import { hash32 } from '../sim/rng';
+import { hash32 } from '../shared/rng';
 
 export type FlowState =
   | 'TITLE' | 'COSMIC_INTRO' | 'CHARACTER_SELECT'

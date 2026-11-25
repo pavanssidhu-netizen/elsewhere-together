@@ -1,15 +1,16 @@
 {
-  "name": "elsewhere-together",
+  "name": "out-of-sync",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/dc_audio_manifest.mjs",
+    "prebuild": "node scripts/audio/build_manifest.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "audio": "python3 scripts/generate_audio.py"
+    "audio:manifest": "node scripts/audio/build_manifest.mjs",
+    "qa": "node scripts/qa/text.mjs && node scripts/qa/forest.mjs && node scripts/qa/replay.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"

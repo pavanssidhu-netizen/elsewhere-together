@@ -1,0 +1,75 @@
+// All spoken / captioned lines, music ids and SFX ids. SHARED CONTRACT: scenes, audio and tests all import from here.
+// Voice files (when generated) live at assets/game/audio/voice/<id>.mp3 ; music at assets/game/audio/music/<id>.mp3 ; sfx at assets/game/audio/sfx/<id>.mp3.
+export type Speaker = 'TIME_MASTER' | 'JENSEN' | 'SAM';
+export interface Line { id: string; who: Speaker; text: string; mood?: 'serious' | 'sarcastic' | 'urgent' | 'smug' | 'crying' | 'cheery' }
+
+export const LINES: Line[] = [
+  // --- Stage 1: cosmic intro (Time Master, voice only; his appearance is NOT revealed here)
+  { id: 'tm_intro_1', who: 'TIME_MASTER', text: 'A disturbance in the timeline.', mood: 'serious' },
+  { id: 'tm_intro_2', who: 'TIME_MASTER', text: 'Interesting. An anomaly of rather extraordinary proportions.', mood: 'serious' },
+  { id: 'tm_intro_3', who: 'TIME_MASTER', text: 'Surely the work of a civilisation with a profound understanding of temporal mechanics.', mood: 'serious' },
+  { id: 'tm_intro_4', who: 'TIME_MASTER', text: 'Oh.', mood: 'sarcastic' },
+  { id: 'tm_intro_5', who: 'TIME_MASTER', text: 'Two mushrooms.', mood: 'sarcastic' },
+  { id: 'tm_intro_6', who: 'TIME_MASTER', text: "They've touched the beacon.", mood: 'sarcastic' },
+  { id: 'tm_intro_7', who: 'TIME_MASTER', text: 'Of course they have.', mood: 'sarcastic' },
+  { id: 'tm_intro_8', who: 'TIME_MASTER', text: 'Well, they have a few dozen heartbeats to put themselves back together before their connection collapses.', mood: 'serious' },
+  { id: 'tm_intro_9', who: 'TIME_MASTER', text: 'Honestly. I leave the timeline unattended for five minutes...', mood: 'sarcastic' },
+  // --- Stage 2: forest
+  { id: 'tm_start', who: 'TIME_MASTER', text: 'One of you lives in the past, one in the future. Record a loop, then catch up with yourself. Light the beacon in both.', mood: 'serious' },
+  { id: 'tm_loop_lock', who: 'TIME_MASTER', text: 'The first loop is recorded. Now do try to keep up with yourself.', mood: 'smug' },
+  { id: 'tm_beats_5', who: 'TIME_MASTER', text: 'Five beats left. Do try to look purposeful.', mood: 'sarcastic' },
+  { id: 'tm_beats_2', who: 'TIME_MASTER', text: 'Two beats! Mushrooms! Please!', mood: 'urgent' },
+  { id: 'tm_paradox', who: 'TIME_MASTER', text: 'A paradox. Splendid. Truly.', mood: 'sarcastic' },
+  { id: 'tm_stage_clear', who: 'TIME_MASTER', text: 'Adequate. Next room.', mood: 'smug' },
+  { id: 'tm_charge_low', who: 'TIME_MASTER', text: 'One chance remains. I would use it wisely. I would.', mood: 'urgent' },
+  { id: 'tm_forest_fail', who: 'TIME_MASTER', text: 'Three chances. Three failures. I am almost impressed.', mood: 'sarcastic' },
+  // mean comments when a room is failed (1st fail: mild; 2nd fail: meaner), picked by seed
+  { id: 'tm_fail1_1', who: 'TIME_MASTER', text: 'Splendid. A masterclass in missing the point.', mood: 'sarcastic' },
+  { id: 'tm_fail1_2', who: 'TIME_MASTER', text: 'I have seen mushrooms fail before. Never with such commitment.', mood: 'sarcastic' },
+  { id: 'tm_fail1_3', who: 'TIME_MASTER', text: 'Do remember, the beacon is the glowing thing.', mood: 'smug' },
+  { id: 'tm_fail2_1', who: 'TIME_MASTER', text: 'Again? Your persistence is exceeded only by your incompetence.', mood: 'urgent' },
+  { id: 'tm_fail2_2', who: 'TIME_MASTER', text: 'I once taught a rock to solve this. The rock was faster.', mood: 'sarcastic' },
+  { id: 'tm_fail2_3', who: 'TIME_MASTER', text: 'Two failures. The universe is drafting a strongly worded letter.', mood: 'urgent' },
+  // jabs thrown now and again DURING an attempt after a failure (set 1 after one fail, set 2 after two fails)
+  { id: 'tm_jab1_1', who: 'TIME_MASTER', text: 'Do try to look less lost.', mood: 'sarcastic' },
+  { id: 'tm_jab1_2', who: 'TIME_MASTER', text: 'Any moment now. Any moment.', mood: 'sarcastic' },
+  { id: 'tm_jab1_3', who: 'TIME_MASTER', text: 'Is that the plan? Bold.', mood: 'smug' },
+  { id: 'tm_jab2_1', who: 'TIME_MASTER', text: 'I have seen moss with more urgency.', mood: 'urgent' },
+  { id: 'tm_jab2_2', who: 'TIME_MASTER', text: 'Stop. You are making the timeline nervous.', mood: 'urgent' },
+  { id: 'tm_jab2_3', who: 'TIME_MASTER', text: 'Your brother is watching. He is embarrassed for you.', mood: 'urgent' },
+  { id: 'tm_forest_win', who: 'TIME_MASTER', text: 'Well. They did it without me. How inconvenient.', mood: 'sarcastic' },
+  { id: 'tm_partner_hint', who: 'TIME_MASTER', text: 'Your brother is trying something. Look for the cyan light.', mood: 'smug' },
+  { id: 'jensen_cheer', who: 'JENSEN', text: 'Yay!', mood: 'cheery' },
+  { id: 'sam_cheer', who: 'SAM', text: 'Woo!', mood: 'cheery' },
+  { id: 'jensen_hmm', who: 'JENSEN', text: 'Hm?', mood: 'cheery' },
+  { id: 'sam_hmm', who: 'SAM', text: 'Huh?', mood: 'cheery' },
+  // --- Stage 3: office
+  { id: 'tm_office_1', who: 'TIME_MASTER', text: 'Well. That went spectacularly badly.', mood: 'smug' },
+  { id: 'tm_office_2', who: 'TIME_MASTER', text: 'Fortunately, I am the Time Master.', mood: 'smug' },
+  { id: 'tm_office_3', who: 'TIME_MASTER', text: 'I can repair this entire mess in seconds.', mood: 'smug' },
+  { id: 'tm_office_4', who: 'TIME_MASTER', text: 'All I require is a little gratitude.', mood: 'smug' },
+  { id: 'tm_office_5', who: 'TIME_MASTER', text: 'Go on. Beg.', mood: 'smug' },
+  { id: 'tm_refuse', who: 'TIME_MASTER', text: 'Very well. Into the soup.', mood: 'sarcastic' },
+  { id: 'tm_soup_after', who: 'TIME_MASTER', text: 'There. Reality, repaired. You may thank me never.', mood: 'smug' },
+  { id: 'tm_accept_1', who: 'TIME_MASTER', text: 'Excellent. I knew you had good manners.', mood: 'smug' },
+  { id: 'tm_accept_2', who: 'TIME_MASTER', text: "Now, naturally, you'll be doing the difficult part.", mood: 'smug' },
+  // --- Stage 4: runner results
+  { id: 'tm_runner_win', who: 'TIME_MASTER', text: 'And that, naturally, was entirely my doing.', mood: 'smug' },
+  { id: 'tm_runner_fail', who: 'TIME_MASTER', text: 'No. No, no, no. This is not how it was meant to go.', mood: 'crying' },
+];
+export const LINE_BY_ID: Record<string, Line> = Object.fromEntries(LINES.map(l => [l.id, l]));
+export type VoiceId = (typeof LINES)[number]['id'];
+
+/** forest = calm; forest_tense = after the 1st failed room; final_minute = after the 2nd failed room (dark, urgent classical) */
+export const MUSIC_IDS = ['cosmic', 'forest', 'forest_tense', 'final_minute', 'office', 'runner', 'reunion'] as const;
+export type MusicId = (typeof MUSIC_IDS)[number];
+
+export const SFX_IDS = [
+  'beep', 'ui_click', 'ui_confirm', 'pink_flash', 'branch', 'beacon_light', 'thread_call', 'echo_cyan', 'tick', 'warning',
+  'collapse', 'fail_sting', 'abduct_beam', 'soup_plop', 'lane_move', 'hit', 'anchor_pickup', 'thread_snap', 'cosmic_boom', 'reunion_chime', 'pickup', 'fuel_burn',
+] as const;
+export type SfxId = (typeof SFX_IDS)[number];
+
+export const TITLE = 'OUT OF SYNC';
+export const TAGLINE = 'Two mushrooms broke time. Now somebody has to put it back.';
+export const INSTRUCTION = 'Your brother is trapped in another time. Restore both beacons before the Thread fades.';
