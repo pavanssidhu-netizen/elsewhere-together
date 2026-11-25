@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DCScene } from '../base';
 import { makeButton } from '../ui/button';
 import { boxText } from '../ui/fit';
+import { frameInner } from '../forest2/view/frame';
 import { Beacon } from '../shared/beacon';
 import { forestBackdrop } from '../office/forest';
 import { mulberry32 } from '../../sim/rng';
@@ -26,7 +27,7 @@ export class EndingScene extends DCScene {
     // parchment card: ui/panel-frame shown 880x294 at (480,170). Its parchment is ~14% in from the left/right, 22% from the top, 18% from the bottom.
     const PW = 880, PH = 294, PX = this.W / 2 - PW / 2, PY = 170 - PH / 2;
     this.add.image(this.W / 2, 170, 'ui/panel-frame').setDisplaySize(PW, PH).setDepth(2000);
-    const inner = { x: PX + 0.14 * PW, y: PY + 0.22 * PH, w: 0.72 * PW, h: 0.60 * PH };
+    const inner = frameInner(this.W / 2, 170, PW, PH); void PX; void PY;
     const title = { FOREST_REUNION: 'REUNITED', RUNNER_REPAIRED: 'TIME REPAIRED', RUNNER_COLLAPSE: 'TIME COLLAPSED' }[kind];
     const tag = { FOREST_REUNION: 'The brothers fixed it themselves.', RUNNER_REPAIRED: 'Entirely the Time Master\'s doing, apparently.', RUNNER_COLLAPSE: 'Everything is fine. Somewhere. Probably.' }[kind];
     boxText(this, 'Pepper16-Bold', title, { x: inner.x, y: inner.y, w: inner.w, h: 44 }, { max: 40, min: 20, align: 'center', valign: 'middle', tint: kind === 'RUNNER_COLLAPSE' ? 0x8a1030 : 0x4a1c0c, depth: 2001 }, 'ending-title');

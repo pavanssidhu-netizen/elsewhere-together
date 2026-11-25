@@ -19,8 +19,8 @@ export class DemoPanel {
     const pw = 860, ph = 330;
     add(scene.add.image(W / 2, H / 2, 'ui/panel-frame').setDisplaySize(pw, ph));
     const top = H / 2 - ph / 2;
-    const tl = boxText(scene, 'Pepper16-Bold', title, { x: W / 2 - 330, y: top + 34, w: 660, h: 34 }, { max: 28, min: 16, align: 'center', tint: 0xfff1c9, depth: D + 1 }, 'demo-title'); this.objs.push(tl);
-    const bl = boxText(scene, 'Aurora16-Smooth', blurb, { x: W / 2 - 330, y: top + 86, w: 660, h: 58 }, { max: 16, min: 11, align: 'center', tint: 0x3a2410, depth: D + 1 }, 'demo-blurb'); this.objs.push(bl);
+    const tl = boxText(scene, 'Pepper16-Bold', title, { x: W / 2 - 280, y: top + 38, w: 560, h: 34 }, { max: 28, min: 16, align: 'center', tint: 0xfff1c9, depth: D + 1 }, 'demo-title'); this.objs.push(tl);
+    const bl = boxText(scene, 'Aurora16-Smooth', blurb, { x: W / 2 - 280, y: top + 90, w: 560, h: 58 }, { max: 16, min: 11, align: 'center', tint: 0x3a2410, depth: D + 1 }, 'demo-blurb'); this.objs.push(bl);
     const n = options.length, bw = Math.min(250, (pw - 140) / n), gap = 14;
     options.forEach((o, i) => {
       const x = W / 2 + (i - (n - 1) / 2) * (bw + gap);

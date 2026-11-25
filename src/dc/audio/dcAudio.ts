@@ -288,6 +288,7 @@ export function createDCAudio(settings: DCSettings): DCAudioWithPriority {
       });
     },
     skipVoice() { try { endVoice(); } catch { /* ignore */ } },
+    isVoiceBusy() { return voice !== null; },
     playSfx(id: SfxId) {
       try {
         if (!(SFX_IDS as readonly string[]).includes(id)) return;

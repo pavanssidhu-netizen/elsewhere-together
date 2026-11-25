@@ -54,7 +54,7 @@ export class Cards {
       this.add(sc.add.image(480, 270, 'ui/panel-frame').setDisplaySize(w, h), 1);
       const inner = frameInner(480, 270, w, h), bottom = inner.y + inner.h;
       // title sits on the wooden header above the parchment
-      this.add(boxText(sc, 'Pepper16-Bold', s.title, { x: inner.x, y: top + h * 0.025, w: inner.w, h: h * 0.17 }, { max: 32, min: 16, align: 'center', valign: 'middle', tint: s.titleTint ?? 0xfff1c9 }, 'card-title'), 2);
+      this.add(boxText(sc, 'Pepper16-Bold', s.title, { x: inner.x - w * 0.02, y: top + h * 0.025, w: inner.w + w * 0.04, h: h * 0.17 }, { max: 32, min: 16, align: 'center', valign: 'middle', tint: s.titleTint ?? 0xfff1c9 }, 'card-title'), 2);
       let y = inner.y;
       if (s.sub) {
         const t = this.add(boxText(sc, 'Aurora16-Smooth', s.sub, { x: inner.x, y, w: inner.w, h: Math.min(44, inner.h * 0.28) }, { max: 16, min: 11, align: 'center', tint: this.ink(s.subTint ?? 0xbcd8d8, 0.42) }, 'card-sub'), 2);
@@ -99,7 +99,7 @@ export class Cards {
       const sc = this.sc, w = 860, h = 440, top = 270 - h / 2;
       this.add(sc.add.image(480, 270, 'ui/panel-frame').setDisplaySize(w, h), 1);
       const inner = frameInner(480, 270, w, h);
-      this.add(boxText(sc, 'Pepper16-Bold', 'CHOOSE YOUR ORDER', { x: inner.x, y: top + h * 0.025, w: inner.w, h: h * 0.17 }, { max: 32, min: 16, align: 'center', valign: 'middle', tint: 0xfff1c9 }, 'chooser-title'), 2);
+      this.add(boxText(sc, 'Pepper16-Bold', 'CHOOSE YOUR ORDER', { x: inner.x - w * 0.02, y: top + h * 0.025, w: inner.w + w * 0.04, h: h * 0.17 }, { max: 32, min: 16, align: 'center', valign: 'middle', tint: 0xfff1c9 }, 'chooser-title'), 2);
       this.add(boxText(sc, 'Aurora16-Smooth', retry ? 'Same room. Who goes first?' : 'Who goes first? The other is a ghost.', { x: inner.x, y: inner.y + 2, w: inner.w, h: 22 }, { max: 16, min: 11, align: 'center', tint: 0x3a2410 }, 'chooser-sub'), 2);
       let sel: Order = pick;
       const colW = 292, hy = inner.y + 28, hh = inner.h - 30;

@@ -9,7 +9,17 @@ export class DCScene extends Phaser.Scene {
   init(data: SceneData): void { this.data0 = data ?? ({} as SceneData); this.snap = data?.snap; }
   get dc(): DCServices { return this.registry.get('dc') as DCServices; }
   /** Always route state changes through the flow controller. */
-  send = (e: Parameters<DCServices['flow']['dispatch']>[0]): boolean => this.dc.flow.dispatch(e);
+  send = (e: Parameters<DCServices['flow']['dispatch']>[0]): boolean => {
+    // DEMO MODE never cuts the narrator off: a scene's exit waits (max 20 s) until the current voice line has finished.
+    const a = this.dc.audio;
+    if (this.snap?.demo && a.isVoiceBusy?.()) {
+      const t0 = performance.now();
+      const poll = (): void => { if (a.isVoiceBusy?.() && performance.now() - t0 < 20000) window.setTimeout(poll, 150); else this.dc.flow.dispatch(e); };
+      window.setTimeout(poll, 150);
+      return true;
+    }
+    return this.dc.flow.dispatch(e);
+  };
   /** True while gameplay timers may run (not paused, not in a cutscene). */
   get live(): boolean { return this.dc.flow.timersRunning; }
   fadeIn(ms = 300): void { if (!this.dc.settings.reduceMotion) this.cameras.main.fadeIn(ms, 0, 0, 0); }

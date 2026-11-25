@@ -208,10 +208,12 @@ export class ForestScene extends DCScene {
 
   private armAuto(): void {
     if (!this.auto) return;
-    if (this.auto.mode === 'lose') { this.auto.q = [{ t: 'END_LOOP' }, { t: 'END_LOOP' }]; this.auto.hold = 3200; return; }
     const run = this.run.raw as ForestRun;
     const sol = referenceSolution(run.roomId, this.lastOrder, run.stageSeed);
-    this.auto.q = [...sol.phase1, ...sol.phase2]; this.auto.hold = 900;
+    // win: the whole reference solution. lose: the first brother plays his loop properly, the second one gets about halfway and runs out of road.
+    if (this.auto.mode === 'lose') this.auto.q = [...sol.phase1, ...sol.phase2.slice(0, Math.ceil(sol.phase2.length * 0.5)), { t: 'END_LOOP' }];
+    else this.auto.q = [...sol.phase1, ...sol.phase2];
+    this.auto.hold = 900;
   }
 
   private startAttempt(order: Order): void {
@@ -460,6 +462,10 @@ export class ForestScene extends DCScene {
 
   private say(id: string, ms = 3800): void {
     const l = LINE_BY_ID[id]; if (!l) return;
+    if (this.auto && this.dc.audio.isVoiceBusy?.()) {   // demo: never cut a line off. Quips/jabs are dropped, story lines wait their turn.
+      if (!/^tm_jab/.test(id)) this.later(400, () => this.say(id, ms));
+      return;
+    }
     this.lastLine = id; this.spoken.push(id);
     void this.dc.audio.playVoice(id);
     this.caption(l.text, 'tm', ms);

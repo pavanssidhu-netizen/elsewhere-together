@@ -21,6 +21,8 @@ export interface DCAudio {
   setBondStress(v01: number): void;
   playVoice(id: string): Promise<void>;                       // resolves when the line ends (or when skipped). Unknown id resolves immediately.
   skipVoice(): void;
+  /** true while a voice line is playing (demo mode waits for it instead of cutting it off) */
+  isVoiceBusy?(): boolean;
   playSfx(id: SfxId): void;
   setMuted(m: boolean): void;
   setBus(bus: 'music' | 'voice' | 'sfx', volume01: number): void;

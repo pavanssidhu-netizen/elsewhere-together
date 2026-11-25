@@ -12,6 +12,7 @@ export class TitleScene extends DCScene {
   private started = false;
 
   create(): void {
+    this.started = false; this.layers = [];   // scene instances are reused: a replay must start with live buttons
     crispFonts(this);
     this.cameras.main.setBackgroundColor(0x05060d);
     this.fadeIn(500);
