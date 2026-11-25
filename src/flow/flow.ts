@@ -14,6 +14,7 @@ export type EndingKind = 'FOREST_REUNION' | 'SOUP' | 'RUNNER_REPAIRED' | 'RUNNER
 
 export type FlowEvent =
   | { type: 'START' }                                   // title -> intro
+  | { type: 'START_DEMO' }                              // title -> intro in DEMO mode (scenes offer win/lose choices; see snapshot.demo)
   | { type: 'SKIP' }                                    // skip the current cutscene (never breaks state)
   | { type: 'SELECT'; character: Character }
   | { type: 'FOREST_WON' } | { type: 'FOREST_LOST' }   // timer / sim result
@@ -29,7 +30,7 @@ export type FlowEvent =
 export interface Outcome { game: 'FOREST' | 'RUNNER'; result: 'WIN' | 'LOSE'; seed: number; character: Character | null }
 
 export interface FlowSnapshot {
-  state: FlowState; paused: boolean; character: Character | null;
+  state: FlowState; paused: boolean; demo: boolean; character: Character | null;
   baseSeed: number; forestSeed: number | null; runnerSeed: number | null;
   attempts: { forest: number; runner: number };
   lastOutcome: Outcome | null; outcomes: Outcome[]; ending: EndingKind | null;
@@ -48,7 +49,7 @@ export class FlowController {
 
   constructor(baseSeed = 48219) {
     this.s = {
-      state: 'TITLE', paused: false, character: null, baseSeed, forestSeed: null, runnerSeed: null,
+      state: 'TITLE', paused: false, demo: false, character: null, baseSeed, forestSeed: null, runnerSeed: null,
       attempts: { forest: 0, runner: 0 }, lastOutcome: null, outcomes: [], ending: null, history: ['TITLE'],
     };
   }
@@ -95,11 +96,11 @@ export class FlowController {
       case 'PAUSE': if (GAMEPLAY.has(s.state)) s.paused = true; break;
       case 'RESUME': s.paused = false; break;
       case 'QUIT':
-        if (s.state !== 'TITLE') { s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; s.attempts = { forest: 0, runner: 0 }; this.go('TITLE'); }
+        if (s.state !== 'TITLE') { s.demo = false; s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; s.attempts = { forest: 0, runner: 0 }; this.go('TITLE'); }
         break;
       case 'REPLAY':
         if (s.ending !== null) { // full story again; keep the base seed, bump nothing else
-          s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; this.go('TITLE');
+          s.demo = false; s.character = null; s.ending = null; s.paused = false; s.forestSeed = null; s.runnerSeed = null; this.go('TITLE');
         }
         break;
       case 'RESTART_FOREST': // any time after the forest has been unlocked
@@ -120,7 +121,7 @@ export class FlowController {
     if (s.paused && e.type !== 'SKIP') return; // a paused game accepts nothing but resume (handled above)
     const next = (ev: FlowEvent['type']) => e.type === ev || (e.type === 'SKIP' && this.skippable) || e.type === 'CONTINUE';
     switch (s.state) {
-      case 'TITLE': if (e.type === 'START') this.go('COSMIC_INTRO'); break;
+      case 'TITLE': if (e.type === 'START') this.go('COSMIC_INTRO'); else if (e.type === 'START_DEMO') { s.demo = true; this.go('COSMIC_INTRO'); } break;
       case 'COSMIC_INTRO': if (e.type === 'SKIP' || e.type === 'CONTINUE') this.go('CHARACTER_SELECT'); break;
       case 'CHARACTER_SELECT': if (e.type === 'SELECT') { s.character = e.character; this.startForest(); } break;
       case 'FOREST_GAME':

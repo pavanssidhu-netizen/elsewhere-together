@@ -143,4 +143,5 @@ game.events.once('dc-ready', () => {
   showState(flow.snapshot());
 });
 
-(window as unknown as Record<string, unknown>).__dc = { flow, game, services, routeFor };
+import { auditText } from './ui/fit';
+(window as unknown as Record<string, unknown>).__dc = { flow, game, services, routeFor, auditText: () => auditText(game) };

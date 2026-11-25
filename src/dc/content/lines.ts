@@ -22,7 +22,21 @@ export const LINES: Line[] = [
   { id: 'tm_paradox', who: 'TIME_MASTER', text: 'A paradox. Splendid. Truly.', mood: 'sarcastic' },
   { id: 'tm_stage_clear', who: 'TIME_MASTER', text: 'Adequate. Next room.', mood: 'smug' },
   { id: 'tm_charge_low', who: 'TIME_MASTER', text: 'One chance remains. I would use it wisely. I would.', mood: 'urgent' },
-  { id: 'tm_forest_fail', who: 'TIME_MASTER', text: 'And that is time. Splendid. Truly.', mood: 'sarcastic' },
+  { id: 'tm_forest_fail', who: 'TIME_MASTER', text: 'Three chances. Three failures. I am almost impressed.', mood: 'sarcastic' },
+  // mean comments when a room is failed (1st fail: mild; 2nd fail: meaner), picked by seed
+  { id: 'tm_fail1_1', who: 'TIME_MASTER', text: 'Splendid. A masterclass in missing the point.', mood: 'sarcastic' },
+  { id: 'tm_fail1_2', who: 'TIME_MASTER', text: 'I have seen mushrooms fail before. Never with such commitment.', mood: 'sarcastic' },
+  { id: 'tm_fail1_3', who: 'TIME_MASTER', text: 'Do remember, the beacon is the glowing thing.', mood: 'smug' },
+  { id: 'tm_fail2_1', who: 'TIME_MASTER', text: 'Again? Your persistence is exceeded only by your incompetence.', mood: 'urgent' },
+  { id: 'tm_fail2_2', who: 'TIME_MASTER', text: 'I once taught a rock to solve this. The rock was faster.', mood: 'sarcastic' },
+  { id: 'tm_fail2_3', who: 'TIME_MASTER', text: 'Two failures. The universe is drafting a strongly worded letter.', mood: 'urgent' },
+  // jabs thrown now and again DURING an attempt after a failure (set 1 after one fail, set 2 after two fails)
+  { id: 'tm_jab1_1', who: 'TIME_MASTER', text: 'Do try to look less lost.', mood: 'sarcastic' },
+  { id: 'tm_jab1_2', who: 'TIME_MASTER', text: 'Any moment now. Any moment.', mood: 'sarcastic' },
+  { id: 'tm_jab1_3', who: 'TIME_MASTER', text: 'Is that the plan? Bold.', mood: 'smug' },
+  { id: 'tm_jab2_1', who: 'TIME_MASTER', text: 'I have seen moss with more urgency.', mood: 'urgent' },
+  { id: 'tm_jab2_2', who: 'TIME_MASTER', text: 'Stop. You are making the timeline nervous.', mood: 'urgent' },
+  { id: 'tm_jab2_3', who: 'TIME_MASTER', text: 'Your brother is watching. He is embarrassed for you.', mood: 'urgent' },
   { id: 'tm_forest_win', who: 'TIME_MASTER', text: 'Well. They did it without me. How inconvenient.', mood: 'sarcastic' },
   { id: 'tm_partner_hint', who: 'TIME_MASTER', text: 'Your brother is trying something. Look for the cyan light.', mood: 'smug' },
   { id: 'jensen_cheer', who: 'JENSEN', text: 'Yay!', mood: 'cheery' },
@@ -46,12 +60,13 @@ export const LINES: Line[] = [
 export const LINE_BY_ID: Record<string, Line> = Object.fromEntries(LINES.map(l => [l.id, l]));
 export type VoiceId = (typeof LINES)[number]['id'];
 
-export const MUSIC_IDS = ['cosmic', 'forest', 'final_minute', 'office', 'runner', 'reunion'] as const;
+/** forest = calm; forest_tense = after the 1st failed room; final_minute = after the 2nd failed room (dark, urgent classical) */
+export const MUSIC_IDS = ['cosmic', 'forest', 'forest_tense', 'final_minute', 'office', 'runner', 'reunion'] as const;
 export type MusicId = (typeof MUSIC_IDS)[number];
 
 export const SFX_IDS = [
   'beep', 'ui_click', 'ui_confirm', 'pink_flash', 'branch', 'beacon_light', 'thread_call', 'echo_cyan', 'tick', 'warning',
-  'collapse', 'abduct_beam', 'soup_plop', 'lane_move', 'hit', 'anchor_pickup', 'thread_snap', 'cosmic_boom', 'reunion_chime', 'pickup', 'fuel_burn',
+  'collapse', 'fail_sting', 'abduct_beam', 'soup_plop', 'lane_move', 'hit', 'anchor_pickup', 'thread_snap', 'cosmic_boom', 'reunion_chime', 'pickup', 'fuel_burn',
 ] as const;
 export type SfxId = (typeof SFX_IDS)[number];
 

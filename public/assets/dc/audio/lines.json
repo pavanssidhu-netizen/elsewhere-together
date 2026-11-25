@@ -99,8 +99,80 @@
   {
    "id": "tm_forest_fail",
    "who": "TIME_MASTER",
-   "text": "And that is time. Splendid. Truly.",
+   "text": "Three chances. Three failures. I am almost impressed.",
    "mood": "sarcastic"
+  },
+  {
+   "id": "tm_fail1_1",
+   "who": "TIME_MASTER",
+   "text": "Splendid. A masterclass in missing the point.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_fail1_2",
+   "who": "TIME_MASTER",
+   "text": "I have seen mushrooms fail before. Never with such commitment.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_fail1_3",
+   "who": "TIME_MASTER",
+   "text": "Do remember, the beacon is the glowing thing.",
+   "mood": "smug"
+  },
+  {
+   "id": "tm_fail2_1",
+   "who": "TIME_MASTER",
+   "text": "Again? Your persistence is exceeded only by your incompetence.",
+   "mood": "urgent"
+  },
+  {
+   "id": "tm_fail2_2",
+   "who": "TIME_MASTER",
+   "text": "I once taught a rock to solve this. The rock was faster.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_fail2_3",
+   "who": "TIME_MASTER",
+   "text": "Two failures. The universe is drafting a strongly worded letter.",
+   "mood": "urgent"
+  },
+  {
+   "id": "tm_jab1_1",
+   "who": "TIME_MASTER",
+   "text": "Do try to look less lost.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_jab1_2",
+   "who": "TIME_MASTER",
+   "text": "Any moment now. Any moment.",
+   "mood": "sarcastic"
+  },
+  {
+   "id": "tm_jab1_3",
+   "who": "TIME_MASTER",
+   "text": "Is that the plan? Bold.",
+   "mood": "smug"
+  },
+  {
+   "id": "tm_jab2_1",
+   "who": "TIME_MASTER",
+   "text": "I have seen moss with more urgency.",
+   "mood": "urgent"
+  },
+  {
+   "id": "tm_jab2_2",
+   "who": "TIME_MASTER",
+   "text": "Stop. You are making the timeline nervous.",
+   "mood": "urgent"
+  },
+  {
+   "id": "tm_jab2_3",
+   "who": "TIME_MASTER",
+   "text": "Your brother is watching. He is embarrassed for you.",
+   "mood": "urgent"
   },
   {
    "id": "tm_forest_win",
@@ -215,6 +287,10 @@
    "durationSec": 40
   },
   {
+   "id": "forest_tense",
+   "durationSec": 40
+  },
+  {
    "id": "final_minute",
    "durationSec": 30
   },
@@ -275,6 +351,10 @@
   {
    "id": "collapse",
    "durationSec": 1.8
+  },
+  {
+   "id": "fail_sting",
+   "durationSec": 1.6
   },
   {
    "id": "abduct_beam",

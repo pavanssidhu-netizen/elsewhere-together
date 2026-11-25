@@ -216,7 +216,9 @@ function reunion(): TrackSpec {
   return { id: 'reunion', bpm: 84, beats: 16, loop: false, level: 1.3, notes: n };
 }
 
-const BUILDERS: Record<MusicId, () => TrackSpec> = { cosmic, forest, final_minute: finalMinute, office, runner, reunion };
+// forest_tense (after the 1st failed room): placeholder = a darker, faster take on the forest score until the AUDIO agent writes its own
+const forestTense = (): TrackSpec => { const t = forest(); return { ...t, id: 'forest_tense', bpm: Math.round(t.bpm * 1.15), level: t.level }; };
+const BUILDERS: Record<MusicId, () => TrackSpec> = { cosmic, forest, forest_tense: forestTense, final_minute: finalMinute, office, runner, reunion };
 export const trackSpec = (id: MusicId): TrackSpec => {
   const t = BUILDERS[id]();
   t.notes.sort((a, b) => a.beat - b.beat);
@@ -242,7 +244,7 @@ export function drainNotes(spec: TrackSpec, cur: Cursor, untilBeat: number): { a
 // ---------- SFX nominal durations (seconds), also used by the generator ----------
 export const SFX_DURATIONS: Record<SfxId, number> = {
   beep: 0.3, ui_click: 0.1, ui_confirm: 0.4, pink_flash: 0.6, branch: 0.7, beacon_light: 1.0, thread_call: 1.2, echo_cyan: 1.0, tick: 0.08, warning: 0.8,
-  collapse: 1.8, abduct_beam: 2.2, soup_plop: 0.45, lane_move: 0.18, hit: 0.5, anchor_pickup: 0.6, thread_snap: 0.7, cosmic_boom: 2.0, reunion_chime: 2.5, pickup: 0.35, fuel_burn: 0.9,
+  collapse: 1.8, fail_sting: 1.6, abduct_beam: 2.2, soup_plop: 0.45, lane_move: 0.18, hit: 0.5, anchor_pickup: 0.6, thread_snap: 0.7, cosmic_boom: 2.0, reunion_chime: 2.5, pickup: 0.35, fuel_burn: 0.9,
 };
 
-export const MUSIC_DURATIONS_SEC: Record<MusicId, number> = { cosmic: 40, forest: 40, final_minute: 30, office: 30, runner: 30, reunion: 20 };
+export const MUSIC_DURATIONS_SEC: Record<MusicId, number> = { cosmic: 40, forest: 40, forest_tense: 40, final_minute: 30, office: 30, runner: 30, reunion: 20 };

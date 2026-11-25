@@ -26,7 +26,8 @@ LINES_JSON = os.path.join(AUDIO_DIR, "lines.json")
 API = "https://api.elevenlabs.io"
 
 # Premade voice ids are unverified guesses: the creative director picks the real ones (see docs/DC_AUDIO.md).
-DEFAULT_VOICES = {"TIME_MASTER": "pNInz6obpgDQGcFmaJgB", "JENSEN": "TX3LPaxmHKxFdv7VOQHJ", "SAM": "ErXwobaYiN019PkySvjV"}
+# Voices on the creative director's account (checked with --check): Adam = dominant, firm (Time Master); Liam = energetic (Jensen); Will = relaxed optimist (Sam).
+DEFAULT_VOICES = {"TIME_MASTER": "pNInz6obpgDQGcFmaJgB", "JENSEN": "TX3LPaxmHKxFdv7VOQHJ", "SAM": "bIHbv24MWmeRgasZH58o"}
 TTS_MODEL = "eleven_multilingual_v2"
 
 # Estimates, verify against your plan: TTS ~1 credit/char (0.5 for flash/turbo), SFX ~40 credits/s, music ~20 credits/s (ASSUMPTION).
@@ -44,6 +45,7 @@ SUFFIX = " Loopable, no vocals except the choral texture where stated, original 
 MUSIC_PROMPTS = {
     "cosmic": "Clinical, spacious sci-fi ambience, distant electronic pulses, glass-like synths, slow evolving tones, restrained and mysterious.",
     "forest": "Playful dramatic classical fantasy with a memorable whimsical melody, bright strings, delicate woodwinds, celesta and gentle orchestral movement; supports humour and exploration.",
+    "forest_tense": "Tense dramatic classical orchestration: rising strings, ominous low brass and timpani, a whimsical forest melody played in a minor key, unsettled but not yet frantic.",
     "final_minute": "Darker, urgent classical orchestration, fast strings, deep percussion, dramatic choral textures and tension.",
     "office": "Comically pompous, playful chamber music; exaggerated regal fanfare with delicate orchestral instruments.",
     "runner": "Energetic, rhythmically precise retro sci-fi arcade music suitable for a short high-intensity game.",
@@ -61,6 +63,7 @@ SFX_PROMPTS = {
     "tick": "single clock tick, dry, tiny",
     "warning": "three urgent soft alarm pulses, not harsh",
     "collapse": "reality collapsing, falling pitch rumble with crumbling noise",
+    "fail_sting": "short ominous orchestral sting, low brass swell and a cracking cymbal, comedic doom",
     "abduct_beam": "sci-fi abduction beam, rising cyan hum with shimmer",
     "soup_plop": "comedic bloop of something dropping into thick soup",
     "lane_move": "quick light whoosh sideways",

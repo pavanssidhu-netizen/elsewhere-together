@@ -86,4 +86,12 @@ describe('flow controller', () => {
     expect(f.state).toBe('TITLE'); expect(f.snapshot().paused).toBe(false); expect(f.snapshot().character).toBeNull();
     expect(f.dispatch({ type: 'QUIT' })).toBe(false);
   });
+  it('demo mode: START_DEMO sets the flag, it survives the whole run and is cleared by replay/quit', () => {
+    const f = new FlowController(1);
+    run(f, { type: 'START_DEMO' }); expect(f.state).toBe('COSMIC_INTRO'); expect(f.snapshot().demo).toBe(true);
+    run(f, { type: 'SKIP' }, { type: 'SELECT', character: 'SAM' }, { type: 'FOREST_WON' }, { type: 'SKIP' }); expect(f.snapshot().demo).toBe(true);
+    run(f, { type: 'REPLAY' }); expect(f.snapshot().demo).toBe(false);
+    run(f, { type: 'START_DEMO' }, { type: 'QUIT' }); expect(f.snapshot().demo).toBe(false);
+    run(f, { type: 'START' }); expect(f.snapshot().demo).toBe(false);
+  });
 });
