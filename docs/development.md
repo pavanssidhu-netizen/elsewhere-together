@@ -25,6 +25,7 @@ They serve `dist/` on a free port and drive headless Chromium with real key pres
 | `fullrun.mjs` | plays every branch of the story to its ending |
 | `replay.mjs` | after an ending, PLAY and DEMO MODE work again without a refresh |
 | `demo.mjs` | runs the forest demo (`CHOICE=1` win, `CHOICE=2` lose), logs flow states, saves screenshots to `OUT` |
+| `runner.mjs` | plays the runner with a reacting bot through the real UI and screenshots the moving broken anchors and the decoy |
 | `office.mjs` | advances the office dialogue to the Time Master reveal and screenshots it |
 | `shots.mjs [outDir] [WxH]` | screenshots every scene (`ONLY=title,select` to pick) |
 

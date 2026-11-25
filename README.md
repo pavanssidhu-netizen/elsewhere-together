@@ -24,7 +24,7 @@ npm test           # unit tests
    - Tether: stay within 4 tiles of your twin or moves cost 2 beats.
    - 3 Thread charges per run (5 in relaxed mode). Every failed room greys the world a bit more, the music gets more dramatic, and the Time Master gets meaner.
 3. **Fail -> abduction -> the Time Master's office.** Beg ("Please, magnificent Time Master.") or refuse ("Absolutely not.", which leads to the soup ending).
-4. **Game 2, Stitch the Timeline** (3-lane runner). Dodge broken branches (3 hits = fail), collect 3 anchors.
+4. **Game 2, Stitch the Timeline** (4-lane runner). Dodge broken branches (3 hits = fail) and collect 3 real anchors. Watch out for broken anchors that slide sideways as they fall, and for one decoy anchor that looks real and cracks at the last moment.
 5. Four endings: forest reunion, soup, time repaired, time collapsed. All offer replay.
 
 ## Controls

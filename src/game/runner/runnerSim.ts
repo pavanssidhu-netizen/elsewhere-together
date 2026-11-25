@@ -1,8 +1,10 @@
-// 'Stitch the Timeline': pure, fixed-timestep, seeded simulation of the 3-lane thread runner.
+// 'Stitch the Timeline': pure, fixed-timestep, seeded simulation of the 4-lane thread runner.
 // No Math.random, no wall clock, no Phaser. All rules are integer ticks so validation is exact.
 import { mulberry32, hash32 } from '../../shared/rng';
 
-export const LANES = 3;
+export const LANES = 4;
+/** Lane the thread starts in (second from the left). */
+export const START_LANE = 1;
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;
 /** One lane change per this many ticks (0.18 s). */
@@ -13,6 +15,12 @@ export const MAX_HITS = 3;
 export const ANCHORS_TO_WIN = 3;
 /** Ticks before the first row reaches the player (ready/lead-in). */
 export const LEAD_TICKS = 130;
+/** A decoy anchor looks real, then turns broken this many ticks before it reaches the player (about 0.65 s: one or two lane changes plus a human reaction, no more). */
+export const TRAP_FLIP_TICKS = 40;
+/** A moving broken anchor finishes sliding sideways this many ticks before it arrives, so its final lane is readable early enough to dodge. */
+export const MOVER_SETTLE_TICKS = 34;
+/** ...and the slide itself takes this many ticks. */
+export const MOVER_SLIDE_TICKS = 56;
 /** Safety margin (ticks) the generator keeps on top of cooldown*lane-steps between rows. */
 const MARGIN = 2;
 
@@ -28,6 +36,10 @@ export interface Row {
   anchorIdx: number;
   /** cosmetic variant, seeded */
   variant: number;
+  /** Broken anchor that slides sideways from lane `from` to lane `to` while it falls. `blocked` holds only bit `to`: the lane it ends in. */
+  mover?: { from: number; to: number };
+  /** Decoy anchor in this lane: collectable-looking until TRAP_FLIP_TICKS before arrival, then broken. `blocked` holds this lane's bit; it is never collectable. */
+  trapLane?: number;
 }
 export type SimEvent =
   | { type: 'lane'; tick: number; from: number; to: number }
@@ -44,7 +56,7 @@ export interface RunnerState {
 }
 
 const bit = (lane: number) => 1 << lane;
-const popc = (m: number) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1);
+const LANE_LIST = Array.from({ length: LANES }, (_, i) => i);
 
 /** Minimum ticks between two rows so that the player can go from lane a to lane b. */
 export function needTicks(a: number, b: number): number {
@@ -64,7 +76,7 @@ export function reachNext(prev: readonly number[], prevTick: number, r: Row): nu
 
 /** Validator: every row keeps a viable path, anchors included. Returns the index of the first bad row or -1. */
 export function validateRows(rows: readonly Row[]): number {
-  let reach = [1]; let t = 0;
+  let reach = [START_LANE]; let t = 0;
   for (let i = 0; i < rows.length; i++) {
     reach = reachNext(reach, t, rows[i]);
     if (reach.length === 0) return i;
@@ -73,9 +85,9 @@ export function validateRows(rows: readonly Row[]): number {
   return -1;
 }
 
-export interface Tuning { v0: number; vmax: number; rampSec: number; gap0: number; gap1: number; anchorSec: number[]; spare: number[] }
-export const NORMAL: Tuning = { v0: 250, vmax: 430, rampSec: 40, gap0: 1.05, gap1: 0.64, anchorSec: [11.6, 23.4, 35.4], spare: [47.4, 59.4] };
-export const RELAXED: Tuning = { v0: 190, vmax: 320, rampSec: 44, gap0: 1.4, gap1: 0.95, anchorSec: [12.6, 25.4, 38.2], spare: [51, 63.5] };
+export interface Tuning { v0: number; vmax: number; rampSec: number; gap0: number; gap1: number; anchorSec: number[]; spare: number[]; moverSec: number[]; trapSec: number }
+export const NORMAL: Tuning = { v0: 250, vmax: 430, rampSec: 40, gap0: 1.05, gap1: 0.64, anchorSec: [11.6, 23.4, 35.4], spare: [47.4, 59.4], moverSec: [17.2, 29.0], trapSec: 30.8 };
+export const RELAXED: Tuning = { v0: 190, vmax: 320, rampSec: 44, gap0: 1.4, gap1: 0.95, anchorSec: [12.6, 25.4, 38.2], spare: [51, 63.5], moverSec: [18.6, 31.4], trapSec: 33.4 };
 const END_SEC = 76;
 
 /** Distance (pixels of scroll) travelled by time `t` seconds. Visual only. */
@@ -86,19 +98,26 @@ export function distAt(tu: Tuning, t: number): number {
 }
 export function speedAt(tu: Tuning, t: number): number { return tu.v0 + (tu.vmax - tu.v0) * Math.min(1, t / tu.rampSec); }
 
-// Pre-validated templates: lists of blocked-lane masks. Each row in a template is still run through the validator.
-const SINGLE = [1, 2, 4];
-const DOUBLE = [3, 5, 6];            // one open lane
-const ZIGZAG = [[6, 3, 6], [3, 6, 3], [5, 3, 5], [6, 5, 6], [3, 5, 3]]; // forces lane changes (open lane alternates)
-const STAGGER = [[1, 2, 4], [4, 2, 1], [1, 4], [4, 1]];
+// Pre-validated templates: lists of blocked-lane masks (bit i = lane i). Each row in a template is still run through the validator.
+const SINGLE = [1, 2, 4, 8];
+const DOUBLE = [3, 5, 6, 9, 10, 12];          // two open lanes
+const TRIPLE = [7, 11, 13, 14];               // one open lane (late and rare)
+const ZIGZAG = [[12, 3, 12], [3, 12, 3], [10, 5, 10], [5, 10, 5], [9, 6, 9], [6, 9, 6]]; // forces lane changes (the open pair alternates)
+const STAGGER = [[1, 2, 4, 8], [8, 4, 2, 1], [1, 4], [8, 2], [2, 8], [4, 1]];
+const pick = <T>(rng: () => number, a: readonly T[]): T => a[Math.floor(rng() * a.length)];
 
 export function generateRows(seed: number, relaxed: boolean): Row[] {
   const tu = relaxed ? RELAXED : NORMAL;
   const rng = mulberry32(hash32('runner-rows', seed, relaxed ? 1 : 0));
   const rows: Row[] = [];
-  let reach = [1]; let lastTick = 0;
+  let reach = [START_LANE]; let lastTick = 0;
   const anchorTicks = [...tu.anchorSec, ...tu.spare].map((s, i) => Math.round((s + (i < 3 ? rng() * 1.3 : 0.4 * rng())) * TICK_HZ));
   let nextAnchor = 0;
+  // special rows: two moving broken anchors and one decoy anchor that turns bad (never inside an anchor row)
+  const moverTicks = tu.moverSec.map(sec => Math.round((sec + rng() * 1.2) * TICK_HZ));
+  let nextMover = 0;
+  const trapTick = Math.round((tu.trapSec + rng() * 1.0) * TICK_HZ);
+  let trapDone = false; let trapLaneUsed = -1; let lastAnchorLane = -1;
   let cursor = LEAD_TICKS;
   const gapTicks = (tick: number) => {
     const d = Math.min(1, tick / TICK_HZ / 38);
@@ -121,32 +140,56 @@ export function generateRows(seed: number, relaxed: boolean): Row[] {
       // anchor row: lane chosen among lanes reachable from the previous row
       const lanes: number[] = [];
       for (let b = 0; b < LANES; b++) if (reach.some(a => cursor - lastTick >= needTicks(a, b))) lanes.push(b);
-      const lane = lanes[Math.floor(rng() * lanes.length)];
+      // after the decoy, the real third anchor is as far from the decoy's lane as the timing allows: whoever fell for it has to hurry across
+      let lane = lanes[Math.floor(rng() * lanes.length)];
+      if (trapLaneUsed >= 0 && nextAnchor === ANCHORS_TO_WIN - 1) lane = [...lanes].sort((x, y) => Math.abs(y - trapLaneUsed) - Math.abs(x - trapLaneUsed) || x - y)[0];
+      lastAnchorLane = lane;
       let ok = false;
       // sometimes hazards ride along in the other lanes (not in the first anchor, which is a gentle introduction)
-      const others = [0, 1, 2].filter(l => l !== lane);
-      const tries = [nextAnchor === 0 ? 0 : bit(others[Math.floor(rng() * 2)]), 0];
+      const others = LANE_LIST.filter(l => l !== lane);
+      const tries = [nextAnchor === 0 ? 0 : bit(pick(rng, others)), 0];
       for (const m of tries) { if (tryAdd([mk(cursor, m, lane, nextAnchor)])) { ok = true; break; } }
       if (!ok) { cursor += 10; continue; }
       nextAnchor++;
       cursor += gapTicks(cursor) + 12;
       continue;
     }
+    // moving broken anchor: slides left to right, ends in the lane that is blocked
+    if (nextAnchor < ANCHORS_TO_WIN && nextMover < moverTicks.length && cursor >= moverTicks[nextMover] && cursor < anchorTicks[nextAnchor] - 70) {
+      const to = pick(rng, [2, 3]); const from = pick(rng, [0, 1].filter(f => to - f >= 2));
+      const row = { ...mk(cursor, bit(to)), mover: { from, to } };
+      nextMover++;
+      if (tryAdd([row])) { cursor += gapTicks(cursor); continue; }
+      cursor += 8; continue;
+    }
+    // decoy anchor: looks like an anchor, turns broken as it nears the player
+    if (nextAnchor < ANCHORS_TO_WIN && !trapDone && cursor >= trapTick && cursor < anchorTicks[nextAnchor] - 60) {
+      // the lure sits where the player probably is: in (or next to) the lane of the anchor they just collected
+      const near = lastAnchorLane >= 0 ? [lastAnchorLane, Math.min(LANES - 1, lastAnchorLane + 1), Math.max(0, lastAnchorLane - 1)] : LANE_LIST;
+      const lane = pick(rng, near);
+      const row = { ...mk(cursor, bit(lane)), trapLane: lane };
+      if (tryAdd([row])) { trapDone = true; trapLaneUsed = lane; cursor += gapTicks(cursor) + 20; continue; }
+      cursor += 8; continue;
+    }
     // choose a template by difficulty
     const roll = rng();
-    const pDouble = (relaxed ? 0.06 : 0.12) + d * (relaxed ? 0.2 : 0.38);
+    const pDouble = (relaxed ? 0.1 : 0.2) + d * (relaxed ? 0.25 : 0.4);
+    const pTriple = d < 0.4 ? 0 : (relaxed ? 0.02 : 0.1) * d;
     const pZig = d < 0.25 ? 0 : (relaxed ? 0.08 : 0.2) * d + (relaxed ? 0 : 0.05);
     const pStag = 0.18;
     let masks: number[];
-    if (roll < pZig) masks = ZIGZAG[Math.floor(rng() * ZIGZAG.length)];
-    else if (roll < pZig + pStag * (relaxed ? 0.6 : 1)) masks = STAGGER[Math.floor(rng() * STAGGER.length)];
-    else if (roll < pZig + pStag + pDouble) masks = [DOUBLE[Math.floor(rng() * 3)]];
-    else masks = [SINGLE[Math.floor(rng() * 3)]];
+    if (roll < pZig) masks = pick(rng, ZIGZAG);
+    else if (roll < pZig + pStag * (relaxed ? 0.6 : 1)) masks = pick(rng, STAGGER);
+    else if (roll < pZig + pStag + pTriple) masks = [pick(rng, TRIPLE)];
+    else if (roll < pZig + pStag + pTriple + pDouble) masks = [pick(rng, DOUBLE)];
+    else masks = [pick(rng, SINGLE)];
+    const nextSpecial = Math.min(nextMover < moverTicks.length ? moverTicks[nextMover] : Infinity, trapDone ? Infinity : trapTick);
     const cand: Row[] = []; let tk = cursor;
     // the next anchor must not be crowded out by a long template
     const nextA = nextAnchor < anchorTicks.length ? anchorTicks[nextAnchor] : Infinity;
     for (let i = 0; i < masks.length; i++) {
       if (tk >= nextA - 20 && i > 0) break;
+      if (i > 0 && tk >= nextSpecial) break;     // do not let a long template jump over a mover or the decoy
       cand.push(mk(tk, masks[i]));
       tk += gapTicks(tk);
     }
@@ -163,7 +206,7 @@ export class RunnerSim {
   /** Index of the row where the ANCHORS_TO_WIN-th anchor sits (used for the progress bar). */
   readonly goalTick: number;
   private tick = 0;
-  private lane = 1; private prevLane = 1; private lastMove = -1000;
+  private lane = START_LANE; private prevLane = START_LANE; private lastMove = -1000;
   private queued: Move = 0; private queuedAt = -1000;
   private hits = 0; private anchors = 0; private nextRow = 0;
   private status: Status = 'playing'; private reason: 'hits' | 'faded' | null = null;
@@ -250,19 +293,19 @@ export class RunnerSim {
 export function planPerfect(rows: readonly Row[]): number[] | null {
   const n = rows.length;
   // feasible[i][b] = lane b at row i is on some full path
-  const feas: boolean[][] = rows.map(() => [false, false, false]);
+  const feas: boolean[][] = rows.map(() => LANE_LIST.map(() => false));
   for (let i = n - 1; i >= 0; i--) {
     for (let b = 0; b < LANES; b++) {
       const r = rows[i];
       if ((r.blocked & bit(b)) || (r.anchorLane >= 0 && r.anchorLane !== b)) continue;
       if (i === n - 1) { feas[i][b] = true; continue; }
-      feas[i][b] = [0, 1, 2].some(c => feas[i + 1][c] && rows[i + 1].tick - r.tick >= needTicks(b, c));
+      feas[i][b] = LANE_LIST.some(c => feas[i + 1][c] && rows[i + 1].tick - r.tick >= needTicks(b, c));
     }
   }
   const plan: number[] = [];
-  let cur = 1; let t = 0;
+  let cur = START_LANE; let t = 0;
   for (let i = 0; i < n; i++) {
-    const cands = [0, 1, 2].filter(b => feas[i][b] && rows[i].tick - t >= needTicks(cur, b));
+    const cands = LANE_LIST.filter(b => feas[i][b] && rows[i].tick - t >= needTicks(cur, b));
     if (cands.length === 0) return null;
     cands.sort((x, y) => Math.abs(x - cur) - Math.abs(y - cur));
     cur = cands[0]; plan.push(cur); t = rows[i].tick;
@@ -297,7 +340,7 @@ export function humanBot(reactTicks: number): Bot {
       if (r.tick - st.tick > reactTicks) return 0;
       const good = (l: number) => !(r.blocked & bit(l)) && (r.anchorLane < 0 || r.anchorLane === l);
       if (good(st.lane)) return 0;
-      const cands = [0, 1, 2].filter(good).sort((a, b) => Math.abs(a - st.lane) - Math.abs(b - st.lane));
+      const cands = LANE_LIST.filter(good).sort((a, b) => Math.abs(a - st.lane) - Math.abs(b - st.lane));
       if (!cands.length) return 0;
       return cands[0] > st.lane ? 1 : -1;
     },

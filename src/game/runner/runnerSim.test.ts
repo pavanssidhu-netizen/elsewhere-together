@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RunnerSim, DT, MOVE_COOLDOWN, LANES, validateRows, perfectBot, noInputBot, humanBot, runBot, generateRows, type Row, type Bot,
+  RunnerSim, DT, MOVE_COOLDOWN, LANES, START_LANE, TRAP_FLIP_TICKS, MOVER_SETTLE_TICKS, needTicks, validateRows, perfectBot, noInputBot, humanBot, runBot, generateRows, type Row, type Bot,
 } from './runnerSim';
 
 const SEEDS = Array.from({ length: 500 }, (_, i) => 1000 + i * 7919);
@@ -8,7 +8,7 @@ const SEEDS = Array.from({ length: 500 }, (_, i) => 1000 + i * 7919);
 /** Independent tick-by-tick brute force: states = (lane, ticks since last move). Must hit no hazard and be in the lane of every anchor. */
 function bruteForceViable(rows: readonly Row[]): boolean {
   const C = MOVE_COOLDOWN; // since-last-move is capped at C (= free to move)
-  let cur = new Uint8Array(LANES * (C + 1)); cur[1 * (C + 1) + C] = 1;
+  let cur = new Uint8Array(LANES * (C + 1)); cur[START_LANE * (C + 1) + C] = 1;
   let ri = 0;
   for (let t = 1; t <= rows[rows.length - 1].tick; t++) {
     const nxt = new Uint8Array(cur.length);
@@ -45,8 +45,8 @@ describe('runner pattern generation', () => {
   });
   it('the validator and brute force both reject an impossible hand-made sequence', () => {
     const bad: Row[] = [
-      { tick: 130, blocked: 6, anchorLane: -1, anchorIdx: -1, variant: 0 }, // only lane 0 open
-      { tick: 140, blocked: 3, anchorLane: -1, anchorIdx: -1, variant: 0 }, // only lane 2 open, 10 ticks later
+      { tick: 130, blocked: 14, anchorLane: -1, anchorIdx: -1, variant: 0 }, // only lane 0 open
+      { tick: 140, blocked: 7, anchorLane: -1, anchorIdx: -1, variant: 0 }, // only lane 3 open, 10 ticks later
     ];
     expect(validateRows(bad)).toBe(1);
     expect(bruteForceViable(bad)).toBe(false);
@@ -84,7 +84,7 @@ describe('runner sim', () => {
     const sim = new RunnerSim(4242);
     const expected: number[] = [];
     runBot(sim, noInputBot());
-    for (const r of sim.rows) { if (expected.length < 3 && (r.blocked & 2)) expected.push(r.tick); }
+    for (const r of sim.rows) { if (expected.length < 3 && (r.blocked & (1 << START_LANE))) expected.push(r.tick); }
     expect(sim.result.hits).toBe(3);
     expect(sim.result.ticks).toBe(expected[2]);
   });
@@ -102,18 +102,20 @@ describe('runner sim', () => {
   it('lane changes obey the cooldown and the buffer', () => {
     const sim = new RunnerSim(5);
     sim.step({ move: 1 }, DT);
-    expect(sim.state.lane).toBe(2);
+    expect(sim.state.lane).toBe(START_LANE + 1);
     sim.step({ move: -1 }, DT);
-    expect(sim.state.lane).toBe(2); // cooling down
+    expect(sim.state.lane).toBe(START_LANE + 1); // cooling down
     for (let i = 0; i < MOVE_COOLDOWN; i++) sim.step({}, DT);
-    expect(sim.state.lane).toBe(1); // buffered press applied once the cooldown ended
+    expect(sim.state.lane).toBe(START_LANE); // buffered press applied once the cooldown ended
     sim.step({ move: -1 }, DT); // second press: still cooling down, lane unchanged
-    expect(sim.state.lane).toBe(1);
+    expect(sim.state.lane).toBe(START_LANE);
   });
   it('wall bounds: cannot leave the lanes', () => {
     const sim = new RunnerSim(5);
-    for (let i = 0; i < 100; i++) sim.step({ move: 1 }, DT);
-    expect(sim.state.lane).toBe(2);
+    for (let i = 0; i < 200; i++) sim.step({ move: 1 }, DT);
+    expect(sim.state.lane).toBe(LANES - 1);
+    for (let i = 0; i < 200; i++) sim.step({ move: -1 }, DT);
+    expect(sim.state.lane).toBe(0);
   });
   it('relaxed is easier: lower speed, sparser rows, and a reaction-limited bot wins at least as often', () => {
     const dens = (relaxed: boolean) => SEEDS.slice(0, 100).reduce((a, s) => a + generateRows(s, relaxed).filter(r => r.tick < 40 * 60).length, 0);
@@ -130,7 +132,7 @@ describe('runner sim', () => {
       const sim = new RunnerSim(seed);
       const bot = perfectBot(sim);
       const first = sim.rows.find(r => r.anchorLane >= 0)!;
-      if (first.anchorLane === 1) continue; // the idle player sits in lane 1
+      if (first.anchorLane === START_LANE) continue; // the idle player sits in the start lane
       while (sim.state.tick <= first.tick + 1 && sim.result.status === 'playing') sim.step({}, DT);
       if (sim.result.status !== 'playing') continue;
       expect(sim.result.anchors).toBe(0);
@@ -141,5 +143,45 @@ describe('runner sim', () => {
       tested++;
     }
     expect(tested).toBeGreaterThan(0);
+  });
+});
+
+describe('four lanes, moving broken anchors and the decoy anchor', () => {
+  it('has 4 lanes', () => { expect(LANES).toBe(4); });
+  it('every seed has exactly 2 moving broken anchors (left to right, at least 2 lanes) and 1 decoy anchor, before the third anchor', () => {
+    for (const relaxed of [false, true]) for (const seed of SEEDS.slice(0, 200)) {
+      const rows = generateRows(seed, relaxed);
+      const movers = rows.filter(r => r.mover); const traps = rows.filter(r => r.trapLane !== undefined);
+      expect(movers.length, `movers seed ${seed}`).toBe(2);
+      expect(traps.length, `trap seed ${seed}`).toBe(1);
+      const third = rows.filter(r => r.anchorLane >= 0)[2];
+      for (const m of movers) {
+        expect(m.mover!.to - m.mover!.from).toBeGreaterThanOrEqual(2);
+        expect(m.blocked).toBe(1 << m.mover!.to);
+        expect(m.tick).toBeLessThan(third.tick);
+      }
+      expect(traps[0].blocked).toBe(1 << traps[0].trapLane!);
+      expect(traps[0].anchorLane).toBe(-1);                       // never collectable
+      expect(traps[0].tick).toBeLessThan(third.tick);
+    }
+  });
+  it('the decoy and the movers always leave time to dodge once they reveal their final state', () => {
+    expect(TRAP_FLIP_TICKS).toBeGreaterThanOrEqual(needTicks(0, 2) + 14);   // two lane changes plus ~0.25 s reaction
+    expect(MOVER_SETTLE_TICKS).toBeGreaterThanOrEqual(needTicks(0, 2) + 10);
+  });
+  it('the decoy anchor really hurts: sitting in its lane costs a hit and never gives an anchor', () => {
+    for (const seed of SEEDS.slice(0, 40)) {
+      const sim = new RunnerSim(seed); const trap = sim.rows.find(r => r.trapLane !== undefined)!;
+      const bot = perfectBot(sim);
+      // follow the perfect path until just before the decoy, then walk into its lane and stay there
+      let guard = 0;
+      while (sim.result.status === 'playing' && sim.state.tick < trap.tick - 40 && guard++ < 5000) sim.step({ move: bot.move(sim) }, DT);
+      const hitsBefore = sim.result.hits;
+      while (sim.result.status === 'playing' && sim.state.tick < trap.tick + 1) {
+        const l = sim.state.lane; const want = trap.trapLane!;
+        sim.step({ move: want > l ? 1 : want < l ? -1 : 0 }, DT);
+      }
+      expect(sim.result.hits).toBeGreaterThan(hitsBefore);
+    }
   });
 });

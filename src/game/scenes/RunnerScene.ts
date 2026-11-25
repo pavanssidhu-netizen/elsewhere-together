@@ -1,31 +1,33 @@
 import Phaser from 'phaser';
 import { DCScene } from '../base';
 import {
-  RunnerSim, DT, LANES, ANCHORS_TO_WIN, MAX_HITS, distAt, type SimEvent, type Move, type Row,
+  RunnerSim, DT, LANES, START_LANE, ANCHORS_TO_WIN, MAX_HITS, distAt, TRAP_FLIP_TICKS, MOVER_SETTLE_TICKS, MOVER_SLIDE_TICKS, type SimEvent, type Move, type Row,
   perfectBot, type Bot,
 } from '../runner/runnerSim';
 import { boxText, noFit } from '../ui/fit';
 import { DemoPanel } from '../demo/demoPanel';
 
-// 'Stitch the Timeline': the player steers the Time Master's repair Thread through three lanes.
+// 'Stitch the Timeline': the player steers the Time Master's repair Thread through four lanes.
 // All rules live in the pure RunnerSim; this scene only feeds it input while `live` and draws what it reports.
 
 const CYAN = 0x7be0df;
 const MAGENTA = 0xd5309a;
 const PLAYER_Y = 418;
-const LANE_X = [346, 480, 614];
-const LANE_W = 128;
+const LANE_W = 124;
+const CENTER_X = 480;
+const LANE_X = Array.from({ length: LANES }, (_, i) => CENTER_X + (i - (LANES - 1) / 2) * LANE_W);
+const LANES_LEFT = CENTER_X - (LANE_W * LANES) / 2;
 const SWIPE_PX = 26;
 const BTN = 124;
 const BAR_X = 290, BAR_W = 290;
 const READY_SEC = 2.0;
-const INSTRUCTION = 'Steer the thread. Dodge the broken branches. Collect 3 anchors.';
+const INSTRUCTION = 'Steer the thread. Dodge broken branches and broken anchors. Collect 3 real anchors.';
 const RUNE_FRAMES = [3, 11, 19, 27, 35];
 
-const hazKey = (row: number, lane: number) => 1_000_000 + row * 4 + lane;
+const hazKey = (row: number, lane: number) => 1_000_000 + row * LANES + lane;
 type Phase = 'demo' | 'ready' | 'play' | 'ended';
 type DemoMode = 'off' | 'win' | 'lose';
-interface RowVis { c: Phaser.GameObjects.Container; row: Row; idx: number; kind: 'hazard' | 'anchor'; lane: number }
+interface RowVis { c: Phaser.GameObjects.Container; row: Row; idx: number; kind: 'hazard' | 'anchor' | 'mover' | 'trap'; lane: number; flipped?: boolean }
 
 export class RunnerScene extends DCScene {
   sim!: RunnerSim;
@@ -35,7 +37,7 @@ export class RunnerScene extends DCScene {
   private pendingMove: Move = 0;
   private bgDist = 0;
   private trailDist = 0;
-  private headX = LANE_X[1];
+  private headX = LANE_X[START_LANE];
   private trail: { x: number; d: number }[] = [];
   private vis = new Map<number, RowVis>();
   private rowDist: number[] = [];
@@ -71,7 +73,7 @@ export class RunnerScene extends DCScene {
   create(): void {
     // every restart builds a fresh scene state (the same Scene object is re-run by the flow)
     this.phase = 'ready'; this.demoMode = 'off'; this.bot = null; this.panel?.destroy(); this.panel = null; this.instr = []; this.instrFaded = false; this.readyT = 0; this.lastCount = -1; this.pendingMove = 0; this.bgDist = 0; this.trailDist = 0;
-    this.headX = LANE_X[1]; this.trail = []; this.vis = new Map(); this.spawnIdx = 0; this.flashT = 0; this.ended = false; this.exitAt = 0;
+    this.headX = LANE_X[START_LANE]; this.trail = []; this.vis = new Map(); this.spawnIdx = 0; this.flashT = 0; this.ended = false; this.exitAt = 0;
     this.swipeStartX = new Map(); this.swipeDir = new Map(); this.consumed = new Set(); this.bg = []; this.planets = []; this.healthPips = []; this.anchorPips = [];
 
     const seed = this.snap?.runnerSeed ?? this.snap?.baseSeed ?? 1;
@@ -163,7 +165,7 @@ export class RunnerScene extends DCScene {
     mkP('space/cratered_moon_64', mf, 800, 1.2, 0.13, 640, 0.8);
     layer('space/starfield_white_near', 0.38, 1.5, 0.9).setDepth(2);
     // dark vignette strips so the lane area reads
-    this.add.rectangle(LANE_X[1], this.H / 2, LANE_W * 3 + 24, this.H, 0x050a1a, 0.55).setDepth(3);
+    this.add.rectangle(CENTER_X, this.H / 2, LANE_W * LANES + 24, this.H, 0x050a1a, 0.55).setDepth(3);
   }
 
   private buildHead(): void {
@@ -383,14 +385,14 @@ export class RunnerScene extends DCScene {
     // lane guides
     const g = this.guides; g.clear();
     for (let i = 0; i <= LANES; i++) {
-      const x = LANE_X[1] - LANE_W * 1.5 + i * LANE_W;
+      const x = LANES_LEFT + i * LANE_W;
       g.lineStyle(i === 0 || i === LANES ? 2 : 1, CYAN, i === 0 || i === LANES ? 0.5 : 0.22);
       g.lineBetween(x, 70, x, this.H);
     }
     g.lineStyle(2, CYAN, 0.55);
     const off = (this.bgDist * 0.9) % 60;
     for (let y = -60 + off; y < this.H; y += 60) { if (y > 72) for (const x of LANE_X) g.lineBetween(x, y, x, y + 12); }
-    g.lineStyle(2, CYAN, 0.35); g.strokeRect(LANE_X[1] - LANE_W * 1.5, PLAYER_Y - 26, LANE_W * LANES, 52);
+    g.lineStyle(2, CYAN, 0.35); g.strokeRect(LANES_LEFT, PLAYER_Y - 26, LANE_W * LANES, 52);
 
     this.updateRows(st.dist + speed * this.sim.subTick * DT);
     this.drawBar(st.progress);
@@ -401,8 +403,11 @@ export class RunnerScene extends DCScene {
     const rows = this.sim.rows;
     const yOf = (i: number) => PLAYER_Y - (this.rowDist[i] - dist);
     while (this.spawnIdx < rows.length && yOf(this.spawnIdx) > -90) this.spawn(this.spawnIdx++);
+    const tick = this.sim.state.tick + this.sim.subTick;
     for (const [i, v] of this.vis) {
       const y = yOf(v.idx); v.c.y = y;
+      if (v.kind === 'mover') this.slideMover(v, tick);
+      else if (v.kind === 'trap') this.updateTrap(v, tick);
       if (y > this.H + 100) { this.dropVis(v); this.vis.delete(i); }
     }
   }
@@ -416,7 +421,9 @@ export class RunnerScene extends DCScene {
   private spawn(i: number): void {
     const row = this.sim.rows[i];
     for (let l = 0; l < LANES; l++) {
-      if (row.blocked & (1 << l)) { this.vis.set(hazKey(i, l), this.hazardVis(row, l, i)); }
+      if (!(row.blocked & (1 << l))) continue;
+      const v = row.mover ? this.brokenAnchorVis(row, i, 'mover', row.mover.from) : row.trapLane === l ? this.trapVis(row, i) : this.hazardVis(row, l, i);
+      this.vis.set(hazKey(i, l), v);
     }
     if (row.anchorLane >= 0) this.vis.set(i, this.anchorVis(row, i));
   }
@@ -452,6 +459,65 @@ export class RunnerScene extends DCScene {
     this.tweens.add({ targets: [glow, dia], scale: '*=1.18', duration: 420, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: dia, angle: 360, duration: 3200, repeat: -1 });
     return { c, row, idx: i, kind: 'anchor', lane };
+  }
+
+  /** The parts of an anchor that has gone wrong: the same rune circle and diamond as a real anchor, but magenta, cracked, with shards. */
+  private brokenParts(row: Row): Phaser.GameObjects.GameObject[] {
+    const glow = this.add.image(0, 0, 'vfx/p_light_01').setBlendMode(Phaser.BlendModes.ADD).setTint(MAGENTA).setScale(0.38);
+    const circle = this.add.sprite(0, 0, 'portals/tide_rune_circle').setScale(1.9).setBlendMode(Phaser.BlendModes.ADD).setTint(MAGENTA);
+    circle.play('dcrun-rune');
+    const dia = this.add.image(0, 0, 'runner/Diamond').setScale(3.2).setTint(MAGENTA).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.9);
+    const rune = this.add.image(0, 0, 'runes/64x64_tide_runes_64x64_sheet', RUNE_FRAMES[(row.variant + 2) % RUNE_FRAMES.length]).setScale(1.1).setTint(0xff9bd6);
+    const parts: Phaser.GameObjects.GameObject[] = [glow, circle, dia, rune];
+    const v = row.variant;
+    [[-30, -22, -0.7], [30, -18, 0.6], [-10, 26, 2.4]].forEach(([ox, oy, rot], k) => {
+      const f = this.frameOf('runner/RockShards', 'r' + ((v + k) % 8), ((v + k) % 8) * 16, 0, 16, 16);
+      parts.push(this.add.image(ox, oy, 'runner/RockShards', f).setScale(4.2).setRotation(rot).setTint(0xff5fc8).setBlendMode(Phaser.BlendModes.ADD));
+    });
+    this.tweens.add({ targets: [glow, dia], scale: '*=1.12', duration: 300, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: dia, angle: -360, duration: 2100, repeat: -1 });
+    return parts;
+  }
+
+  /** A moving broken anchor: slides sideways while it falls (see slideMover). */
+  private brokenAnchorVis(row: Row, i: number, kind: 'mover', lane: number): RowVis {
+    const c = this.add.container(LANE_X[lane], -200, this.brokenParts(row)).setDepth(16);
+    return { c, row, idx: i, kind, lane };
+  }
+
+  /** The decoy: a normal-looking anchor with a broken twin hidden inside; the twin replaces it TRAP_FLIP_TICKS before it arrives. */
+  private trapVis(row: Row, i: number): RowVis {
+    const lane = row.trapLane!;
+    const good = this.anchorVis({ ...row, anchorLane: lane, anchorIdx: 0 }, i);
+    const bad = this.brokenParts(row);
+    for (const o of bad) (o as Phaser.GameObjects.Image).setVisible(false);
+    good.c.add(bad);
+    good.c.setData('good', good.c.list.slice(0, 4)); good.c.setData('bad', bad);
+    return { ...good, kind: 'trap', flipped: false };
+  }
+
+  private updateTrap(v: RowVis, tick: number): void {
+    if (v.flipped) return;
+    const tta = v.row.tick - tick;
+    if (tta > TRAP_FLIP_TICKS) {
+      // a short, readable warning: the anchor stutters just before it breaks
+      if (tta < TRAP_FLIP_TICKS + 16 && !this.dc.settings.reduceMotion) v.c.setAlpha(Math.floor(tta / 2) % 2 ? 1 : 0.55);
+      return;
+    }
+    v.flipped = true; v.c.setAlpha(1);
+    for (const o of v.c.getData('good') as Phaser.GameObjects.Image[]) o.setVisible(false);
+    for (const o of v.c.getData('bad') as Phaser.GameObjects.Image[]) o.setVisible(true);
+    this.dc.audio.playSfx('warning');
+    if (!this.dc.settings.reduceMotion) this.tweens.add({ targets: v.c, scale: { from: 1.35, to: 1 }, duration: 180 });
+  }
+
+  /** Slides a moving broken anchor sideways: it settles into its final lane MOVER_SETTLE_TICKS before it arrives. */
+  private slideMover(v: RowVis, tick: number): void {
+    const m = v.row.mover; if (!m) return;
+    const tta = v.row.tick - tick;
+    const p = Math.max(0, Math.min(1, (MOVER_SLIDE_TICKS + MOVER_SETTLE_TICKS - tta) / MOVER_SLIDE_TICKS));
+    const e = p * p * (3 - 2 * p);
+    v.c.x = LANE_X[m.from] + (LANE_X[m.to] - LANE_X[m.from]) * e;
   }
 
   private drawBar(p: number): void {

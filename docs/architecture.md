@@ -69,7 +69,10 @@ Rules are in `docs/forest-rules.md`. In code:
 
 ## Game 2: the runner
 
-`runner/runnerSim.ts` is a pure simulation (lanes, hazards, anchors, a bot that plays perfectly). `RunnerScene.ts` draws it.
+`runner/runnerSim.ts` is a pure simulation of a 4-lane runner (lanes, hazards, anchors, a bot that plays perfectly). `RunnerScene.ts` draws it. The level is a seeded list of rows; every row is run through a validator so a path always exists. Besides plain hazards and the 3 real anchors there are:
+- **2 moving broken anchors** (`row.mover`): magenta, they slide left to right while falling and settle in their final lane `MOVER_SETTLE_TICKS` before they arrive. Hitting one costs a hit.
+- **1 decoy anchor** (`row.trapLane`): looks like a real anchor, then cracks into a broken one `TRAP_FLIP_TICKS` (about 0.65 s) before it arrives, after a short flicker. It is never collectable. The real third anchor is placed as far from it as timing allows, so a player who chased the decoy has to hurry.
+All the timing constants are at the top of the file; the tests check there is always enough time to dodge.
 
 ## Demo mode
 
