@@ -72,10 +72,10 @@ export class OfficeScene extends DCScene {
   private hopOntoDesk(): void {
     const { wizard: wz, pedestal, deskTopY } = this.room;
     this.bobTw?.remove();
-    if (this.dc.settings.reduceMotion) { wz.setDepth(10).setY(deskTopY + 8).setScale(6); pedestal.setDepth(9).setY(deskTopY + 10); return; }
-    this.tweens.add({ targets: wz, y: deskTopY - 40, scale: 6, duration: 260, ease: 'Quad.easeOut', yoyo: false, onComplete: () => {
+    if (this.dc.settings.reduceMotion) { wz.setDepth(10).setY(deskTopY + 6).setScale(3.8); pedestal.setDepth(9).setY(deskTopY + 10); return; }
+    this.tweens.add({ targets: wz, y: deskTopY - 26, scale: 3.8, duration: 260, ease: 'Quad.easeOut', yoyo: false, onComplete: () => {
       wz.setDepth(10);
-      this.tweens.add({ targets: wz, y: deskTopY + 8, duration: 200, ease: 'Bounce.easeOut' });
+      this.tweens.add({ targets: wz, y: deskTopY + 6, duration: 200, ease: 'Bounce.easeOut' });
     } });
     this.tweens.add({ targets: pedestal, y: deskTopY + 10, duration: 460, ease: 'Quad.easeInOut', onStart: () => pedestal.setDepth(9) });
     this.time.delayedCall(480, () => flip(this, 'vfx/impact_white', this.room.deskX, deskTopY + 6, { scale: 0.5, alpha: 0.7, depth: 11 }));
@@ -125,7 +125,7 @@ export class OfficeScene extends DCScene {
 
   private smugBounce(): void {
     if (this.dc.settings.reduceMotion) return;
-    this.tweens.add({ targets: this.room.wizard, scaleX: 6.6, scaleY: 6.6, yoyo: true, duration: 180, repeat: 1 });
+    this.tweens.add({ targets: this.room.wizard, scaleX: 4.4, scaleY: 4.4, yoyo: true, duration: 180, repeat: 1 });
   }
 
   private async accept(): Promise<void> {

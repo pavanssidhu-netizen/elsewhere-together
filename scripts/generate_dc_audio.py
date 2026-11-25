@@ -27,7 +27,7 @@ API = "https://api.elevenlabs.io"
 
 # Premade voice ids are unverified guesses: the creative director picks the real ones (see docs/DC_AUDIO.md).
 # Voices on the creative director's account (checked with --check): Adam = dominant, firm (Time Master); Liam = energetic (Jensen); Will = relaxed optimist (Sam).
-DEFAULT_VOICES = {"TIME_MASTER": "pNInz6obpgDQGcFmaJgB", "JENSEN": "TX3LPaxmHKxFdv7VOQHJ", "SAM": "bIHbv24MWmeRgasZH58o"}
+DEFAULT_VOICES = {"TIME_MASTER": "ktrGUw7rURIQyMrQZqCu", "JENSEN": "TX3LPaxmHKxFdv7VOQHJ", "SAM": "bIHbv24MWmeRgasZH58o"}
 TTS_MODEL = "eleven_multilingual_v2"
 
 # Estimates, verify against your plan: TTS ~1 credit/char (0.5 for flash/turbo), SFX ~40 credits/s, music ~20 credits/s (ASSUMPTION).
@@ -47,7 +47,7 @@ MUSIC_PROMPTS = {
     "forest": "Playful dramatic classical fantasy with a memorable whimsical melody, bright strings, delicate woodwinds, celesta and gentle orchestral movement; supports humour and exploration.",
     "forest_tense": "Tense dramatic classical orchestration: rising strings, ominous low brass and timpani, a whimsical forest melody played in a minor key, unsettled but not yet frantic.",
     "final_minute": "Darker, urgent classical orchestration, fast strings, deep percussion, dramatic choral textures and tension.",
-    "office": "Comically pompous, playful chamber music; exaggerated regal fanfare with delicate orchestral instruments.",
+    "office": "Fast, hyper drum and bass, 174 BPM: rolling breakbeats, wobbling reese bass, rave stabs and a silly bouncy synth hook; cheerfully over-the-top and comical, the polar opposite of dignified.",
     "runner": "Energetic, rhythmically precise retro sci-fi arcade music suitable for a short high-intensity game.",
     "reunion": "Short warm musical resolution using motifs compatible with the whimsical forest theme.",
 }

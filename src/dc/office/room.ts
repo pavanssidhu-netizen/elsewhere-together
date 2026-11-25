@@ -81,7 +81,7 @@ export function buildOffice(scene: DCScene): Room {
   void chair;
   scene.add.image(dx, 185, 'vfx/p_light_01').setTint(0xfff0c8).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9).setAlpha(0.75).setDepth(4.5); // soft light so the dark little wizard reads
   const pedestal = scene.add.image(dx, dBottom - 52, 'home/stack_of_books').setOrigin(0.5, 1).setScale(2.4).setDepth(5);
-  const wiz = wizard(scene, dx, dBottom - 70, 5).setDepth(5);
+  const wiz = wizard(scene, dx, dBottom - 64, 3.2).setDepth(5);
   const desk = scene.add.image(dx, dBottom, 'office/office_assets', 'desk').setOrigin(0.5, 1).setScale(8.4, 7.6).setDepth(7).setTint(0xd9a46c);
   const deskTopY = dBottom - 11 * 7.6;
   scene.add.image(dx - 118, deskTopY + 6, 'home/stack_of_books').setOrigin(0.5, 1).setScale(1.8).setDepth(8).setTint(0xfff3d8);

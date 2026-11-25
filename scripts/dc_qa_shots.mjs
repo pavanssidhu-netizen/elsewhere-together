@@ -13,7 +13,7 @@ const errs = [];
 const plan = [
   ['title', '', [3000]], ['intro', 'jump=COSMIC_INTRO', [3000, 9000, 15000, 21000, 27000]], ['select', 'jump=CHARACTER_SELECT', [2500]],
   ['forest', 'jump=FOREST_GAME&char=SAM&seed=3', [2500, 5000]], ['reunion', 'jump=FOREST_SUCCESS&char=JENSEN', [3000, 8000]],
-  ['collapse', 'jump=FOREST_FAILURE&char=SAM', [2500]], ['beam', 'jump=ABDUCTION&char=SAM', [2500, 4000]], ['office', 'jump=TIME_MASTER_OFFICE&char=SAM', [2500]],
+  ['collapse', 'jump=FOREST_FAILURE&char=SAM', [2500]], ['beam', 'jump=ABDUCTION&char=SAM', [2500, 4000]], ['office', 'jump=TIME_MASTER_OFFICE&char=SAM', [2500, 20000, 32000]],
   ['soup', 'jump=SOUP_ENDING&char=JENSEN', [3000, 8000, 13000]], ['runner', 'jump=THREAD_RUNNER&char=SAM&seed=4', [3000, 6000]],
   ['runwin', 'jump=RUNNER_SUCCESS&char=SAM', [3000, 7000]], ['runfail', 'jump=RUNNER_FAILURE&char=SAM', [2500, 6000]],
   ['end-forest', 'jump=REUNION_ENDING&char=SAM', [2500]], ['end-final', 'jump=FINAL_ENDING&char=SAM', [2500]],

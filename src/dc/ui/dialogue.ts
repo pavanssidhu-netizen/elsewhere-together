@@ -29,11 +29,11 @@ export class DialogueBox {
   constructor(private scene: DCScene, y = 400, w = 860) {
     this.img = scene.add.image(scene.W / 2, y, 'ui/dialog-box'); const k = w / this.img.width; this.img.setScale(k).setDepth(1000).setVisible(false);
     const h = this.img.height * k, L = scene.W / 2 - w / 2, T = y - h / 2;
-    this.textBox = { x: L + 0.085 * w, y: T + 0.30 * h, w: 0.80 * w, h: 0.44 * h };
-    this.nameBox = { x: L + 0.085 * w, y: T + 0.15 * h, w: 0.6 * w, h: 0.12 * h };
+    this.textBox = { x: L + 0.145 * w, y: T + 0.35 * h, w: 0.70 * w, h: 0.40 * h };
+    this.nameBox = { x: L + 0.145 * w, y: T + 0.245 * h, w: 0.5 * w, h: 0.09 * h };
     this.name = scene.add.bitmapText(this.nameBox.x, this.nameBox.y, 'fonts/Pepper16-Bold', '', 16).setDepth(1001).setVisible(false);
     this.body = scene.add.bitmapText(this.textBox.x, this.textBox.y, 'fonts/Aurora16-Smooth', '', 16).setTint(0x2a1608).setDepth(1001).setVisible(false);
-    this.arrow = scene.add.bitmapText(L + 0.905 * w, T + 0.70 * h, 'fonts/Aurora16-Smooth', '>', 16).setTint(0x7a4a10).setDepth(1001).setVisible(false).setData('nofit', true);
+    this.arrow = scene.add.bitmapText(L + 0.85 * w, T + 0.72 * h, 'fonts/Aurora16-Smooth', '>', 16).setTint(0x7a4a10).setDepth(1001).setVisible(false).setData('nofit', true);
     scene.tweens.add({ targets: this.arrow, alpha: 0.2, yoyo: true, repeat: -1, duration: 420 });
     scene.input.on('pointerdown', this.advance, this);
     const kb = scene.input.keyboard;
